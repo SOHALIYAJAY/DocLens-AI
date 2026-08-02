@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI PDF Assistant — Settings</title>
+
+    <!-- Google Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Font Awesome Icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+      integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+
+    <link rel="stylesheet" href="options.css" />
+  </head>
+
+  <body>
+    <div class="options-page">
+
+      <!-- Toast notification for success / error messages -->
+      <div class="toast" id="toast" role="status" aria-live="polite" hidden>
+        <i class="fa-solid fa-circle-check toast-icon" aria-hidden="true"></i>
+        <span class="toast-message" id="toast-message">Settings saved successfully.</span>
+      </div>
+
+      <!-- ================================================================
+           Section 1: Header
+           ================================================================ -->
+      <header class="options-header">
+        <div class="header-brand">
+          <div class="logo" aria-hidden="true">
+            <i class="fa-solid fa-file-pdf"></i>
+          </div>
+          <div class="header-text">
+            <h1 class="header-title">AI PDF Assistant</h1>
+            <p class="header-subtitle">Extension Settings</p>
+          </div>
+        </div>
+      </header>
+
+      <main class="options-main">
+
+        <!-- ================================================================
+             Section 2: AI Settings
+             ================================================================ -->
+        <section class="settings-card" aria-labelledby="ai-settings-title">
+          <div class="card-header">
+            <div class="card-header-icon ai">
+              <i class="fa-solid fa-robot" aria-hidden="true"></i>
+            </div>
+            <div>
+              <h2 class="card-title" id="ai-settings-title">AI Settings</h2>
+              <p class="card-desc">Configure your AI provider and API credentials</p>
+            </div>
+          </div>
+
+          <form class="settings-form" id="ai-settings-form" novalidate>
+            <div class="form-group">
+              <label class="form-label" for="ai-provider">AI Provider</label>
+              <div class="select-wrapper">
+                <select class="form-select" id="ai-provider" name="aiProvider">
+                  <option value="openai">OpenAI</option>
+                  <option value="gemini">Gemini</option>
+                  <option value="claude">Claude</option>
+                </select>
+                <i class="fa-solid fa-chevron-down select-icon" aria-hidden="true"></i>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="ai-model">Model</label>
+              <div class="select-wrapper">
+                <select class="form-select" id="ai-model" name="aiModel">
+                  <!-- Populated dynamically based on provider -->
+                </select>
+                <i class="fa-solid fa-chevron-down select-icon" aria-hidden="true"></i>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="api-key">API Key</label>
+              <div class="input-with-action">
+                <input
+                  type="password"
+                  class="form-input"
+                  id="api-key"
+                  name="apiKey"
+                  placeholder="Enter your API key"
+                  autocomplete="off"
+                  aria-describedby="api-key-error"
+                />
+                <button
+                  type="button"
+                  class="input-action-btn"
+                  id="btn-toggle-api-key"
+                  aria-label="Show API key"
+                  title="Show / Hide API Key"
+                >
+                  <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                </button>
+              </div>
+              <p class="form-error" id="api-key-error" role="alert" hidden>
+                Please enter a valid API key (minimum 20 characters).
+              </p>
+              <p class="form-hint">Your API key is stored locally and never sent to our servers.</p>
+            </div>
+
+            <button type="submit" class="btn btn-primary" id="btn-save-settings">
+              <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+              Save Settings
+            </button>
+          </form>
+        </section>
+
+        <!-- ================================================================
+             Section 3: PDF Settings
+             ================================================================ -->
+        <section class="settings-card" aria-labelledby="pdf-settings-title">
+          <div class="card-header">
+            <div class="card-header-icon pdf">
+              <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
+            </div>
+            <div>
+              <h2 class="card-title" id="pdf-settings-title">PDF Settings</h2>
+              <p class="card-desc">Customize how PDFs are handled</p>
+            </div>
+          </div>
+
+          <div class="settings-form">
+            <div class="form-group">
+              <label class="form-label" for="summary-length">Default Summary Length</label>
+              <div class="select-wrapper">
+                <select class="form-select" id="summary-length" name="summaryLength">
+                  <option value="short">Short</option>
+                  <option value="medium" selected>Medium</option>
+                  <option value="long">Long</option>
+                </select>
+                <i class="fa-solid fa-chevron-down select-icon" aria-hidden="true"></i>
+              </div>
+            </div>
+
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-label">Auto Open Side Panel</span>
+                <span class="toggle-desc">Open the side panel when a PDF is detected</span>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="toggle-auto-sidepanel" checked />
+                <span class="toggle-slider" aria-hidden="true"></span>
+                <span class="sr-only">Auto open side panel</span>
+              </label>
+            </div>
+
+            <div class="toggle-row">
+              <div class="toggle-info">
+                <span class="toggle-label">Remember Recent PDFs</span>
+                <span class="toggle-desc">Keep a list of recently opened documents</span>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="toggle-remember-pdfs" checked />
+                <span class="toggle-slider" aria-hidden="true"></span>
+                <span class="sr-only">Remember recent PDFs</span>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================
+             Section 4: Appearance
+             ================================================================ -->
+        <section class="settings-card" aria-labelledby="appearance-title">
+          <div class="card-header">
+            <div class="card-header-icon appearance">
+              <i class="fa-solid fa-palette" aria-hidden="true"></i>
+            </div>
+            <div>
+              <h2 class="card-title" id="appearance-title">Appearance</h2>
+              <p class="card-desc">Personalize the look and feel</p>
+            </div>
+          </div>
+
+          <div class="settings-form">
+            <div class="form-group">
+              <label class="form-label" for="theme-select">Theme</label>
+              <div class="select-wrapper">
+                <select class="form-select" id="theme-select" name="theme">
+                  <option value="dark" selected>Dark</option>
+                  <option value="light">Light</option>
+                  <option value="system">System</option>
+                </select>
+                <i class="fa-solid fa-chevron-down select-icon" aria-hidden="true"></i>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Font Size</label>
+              <div class="radio-group" role="radiogroup" aria-label="Font size">
+                <label class="radio-pill">
+                  <input type="radio" name="fontSize" value="small" />
+                  <span>Small</span>
+                </label>
+                <label class="radio-pill">
+                  <input type="radio" name="fontSize" value="medium" checked />
+                  <span>Medium</span>
+                </label>
+                <label class="radio-pill">
+                  <input type="radio" name="fontSize" value="large" />
+                  <span>Large</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================
+             Section 5: Language
+             ================================================================ -->
+        <section class="settings-card" aria-labelledby="language-title">
+          <div class="card-header">
+            <div class="card-header-icon language">
+              <i class="fa-solid fa-globe" aria-hidden="true"></i>
+            </div>
+            <div>
+              <h2 class="card-title" id="language-title">Language</h2>
+              <p class="card-desc">Choose your preferred language</p>
+            </div>
+          </div>
+
+          <div class="settings-form">
+            <div class="form-group">
+              <label class="form-label" for="language-select">Language</label>
+              <div class="select-wrapper">
+                <select class="form-select" id="language-select" name="language">
+                  <option value="en" selected>English</option>
+                  <option value="es">Español</option>
+                  <option value="fr">Français</option>
+                  <option value="de">Deutsch</option>
+                  <option value="hi">हिन्दी</option>
+                  <option value="ja">日本語</option>
+                </select>
+                <i class="fa-solid fa-chevron-down select-icon" aria-hidden="true"></i>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================================================================
+             Section 6: Storage
+             ================================================================ -->
+        <section class="settings-card" aria-labelledby="storage-title">
+          <div class="card-header">
+            <div class="card-header-icon storage">
+              <i class="fa-solid fa-database" aria-hidden="true"></i>
+            </div>
+            <div>
+              <h2 class="card-title" id="storage-title">Storage</h2>
+              <p class="card-desc">Manage local data and usage</p>
+            </div>
+          </div>
+
+          <div class="storage-stats">
+            <div class="stat-item">
+              <span class="stat-label">Storage Used</span>
+              <span class="stat-value" id="storage-used">12.4 MB</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Chat History</span>
+              <span class="stat-value" id="chat-history-count">24 conversations</span>
+            </div>
+            <div class="stat-item">
+              <span class="stat-label">Saved PDFs</span>
+              <span class="stat-value" id="saved-pdfs-count">8 documents</span>
+            </div>
+          </div>
+
+          <div class="storage-bar" aria-hidden="true">
+            <div class="storage-bar-fill" id="storage-bar-fill" style="width: 25%"></div>
+          </div>
+          <p class="storage-meta">12.4 MB of 50 MB used</p>
+
+          <div class="button-group">
+            <button type="button" class="btn btn-secondary" id="btn-clear-chat">
+              <i class="fa-solid fa-comments" aria-hidden="true"></i>
+              Clear Chat History
+            </button>
+            <button type="button" class="btn btn-secondary" id="btn-clear-pdfs">
+              <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
+              Clear Saved PDFs
+            </button>
+            <button type="button" class="btn btn-danger" id="btn-reset-settings">
+              <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+              Reset All Settings
+            </button>
+          </div>
+        </section>
+
+        <!-- ================================================================
+             Section 7: About
+             ================================================================ -->
+        <section class="settings-card" aria-labelledby="about-title">
+          <div class="card-header">
+            <div class="card-header-icon about">
+              <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+            </div>
+            <div>
+              <h2 class="card-title" id="about-title">About</h2>
+              <p class="card-desc">Extension information and support</p>
+            </div>
+          </div>
+
+          <dl class="about-list">
+            <div class="about-row">
+              <dt>Extension Name</dt>
+              <dd id="about-name">AI PDF Assistant</dd>
+            </div>
+            <div class="about-row">
+              <dt>Version</dt>
+              <dd id="about-version">1.0.0</dd>
+            </div>
+            <div class="about-row">
+              <dt>Developer</dt>
+              <dd id="about-developer">AI PDF Assistant Team</dd>
+            </div>
+          </dl>
+
+          <div class="button-group about-actions">
+            <button type="button" class="btn btn-secondary" id="btn-github">
+              <i class="fa-brands fa-github" aria-hidden="true"></i>
+              GitHub
+            </button>
+            <button type="button" class="btn btn-primary" id="btn-help">
+              <i class="fa-solid fa-life-ring" aria-hidden="true"></i>
+              Help
+            </button>
+          </div>
+        </section>
+
+      </main>
+
+      <footer class="options-footer">
+        <p>&copy; 2026 AI PDF Assistant. All rights reserved.</p>
+      </footer>
+
+    </div>
+
+    <script src="options.js"></script>
+  </body>
+</html>

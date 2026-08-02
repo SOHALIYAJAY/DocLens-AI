@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI PDF Assistant — Side Panel</title>
+
+    <!-- Google Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Font Awesome Icons -->
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"
+      integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA=="
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer"
+    />
+
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+
+  <body>
+    <div class="sidepanel" role="application" aria-label="AI PDF Assistant Workspace">
+      <header class="sidepanel-header">
+        <div class="header-left">
+          <div class="logo" aria-hidden="true">
+            <i class="fa-solid fa-file-pdf"></i>
+          </div>
+          <div class="header-info">
+            <h1 class="header-title">AI PDF Assistant</h1>
+            <p class="header-pdf-name" id="header-pdf-name" title="Machine Learning Basics.pdf">
+              Machine Learning Basics.pdf
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="icon-btn"
+          id="btn-settings"
+          aria-label="Open settings"
+          title="Settings"
+        >
+          <i class="fa-solid fa-gear"></i>
+        </button>
+      </header>
+
+      <!-- ================================================================
+           Section 2: Navigation
+           ================================================================ -->
+      <nav class="sidepanel-nav" aria-label="Main navigation">
+        <ul class="nav-list" id="nav-list">
+          <li>
+            <button type="button" class="nav-item active" data-section="dashboard">
+              <i class="fa-solid fa-gauge-high" aria-hidden="true"></i>
+              <span>Dashboard</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="nav-item" data-section="chat">
+              <i class="fa-solid fa-comments" aria-hidden="true"></i>
+              <span>AI Chat</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="nav-item" data-section="summary">
+              <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+              <span>PDF Summary</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="nav-item" data-section="qa">
+              <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
+              <span>Q&amp;A</span>
+            </button>
+          </li>
+
+          <li>
+            <button type="button" class="nav-item" data-section="notes">
+              <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
+              <span>Notes</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="nav-item" data-section="bookmarks">
+              <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
+              <span>Bookmarks</span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="nav-item" data-section="history">
+              <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+              <span>History</span>
+            </button>
+          </li>
+        </ul>
+      </nav>
+
+      <!-- ================================================================
+           Main Content — All panel sections
+           ================================================================ -->
+      <main class="sidepanel-main" id="sidepanel-main">
+
+        <!-- Section 3: Dashboard -->
+        <section
+          class="panel-section active"
+          id="section-dashboard"
+          data-section="dashboard"
+          aria-labelledby="nav-dashboard"
+        >
+          <div class="section-heading">
+            <h2 class="section-title">Dashboard</h2>
+            <p class="section-desc">Overview of your current PDF and AI status</p>
+          </div>
+
+          <article class="glass-card dashboard-hero">
+            <div class="dashboard-icon">
+              <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
+            </div>
+            <h3 class="dashboard-pdf-name" id="dashboard-pdf-name">Machine Learning Basics.pdf</h3>
+          </article>
+
+          <div class="stats-grid">
+            <div class="stat-card glass-card">
+              <span class="stat-label">Total Pages</span>
+              <span class="stat-value" id="stat-pages">42</span>
+            </div>
+            <div class="stat-card glass-card">
+              <span class="stat-label">File Size</span>
+              <span class="stat-value" id="stat-size">2.4 MB</span>
+            </div>
+          </div>
+
+          <article class="glass-card">
+            <div class="progress-header">
+              <span class="card-label">Reading Progress</span>
+              <span class="progress-percent" id="reading-progress-text">35%</span>
+            </div>
+            <div class="progress-bar" role="progressbar" aria-valuenow="35" aria-valuemin="0" aria-valuemax="100">
+              <div class="progress-fill" id="reading-progress-fill" style="width: 35%"></div>
+            </div>
+            <p class="progress-meta">Page 15 of 42</p>
+          </article>
+
+
+        </section>
+
+        <!-- Section 4: AI Chat -->
+        <section
+          class="panel-section"
+          id="section-chat"
+          data-section="chat"
+          aria-labelledby="nav-chat"
+          hidden
+        >
+          <div class="section-heading">
+            <h2 class="section-title">AI Chat</h2>
+            <p class="section-desc">Ask anything about your PDF</p>
+          </div>
+
+          <div class="chat-toolbar">
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-clear-chat">
+              <i class="fa-solid fa-trash-can" aria-hidden="true"></i>
+              Clear Chat
+            </button>
+          </div>
+
+          <div class="chat-messages glass-card" id="chat-messages" aria-live="polite">
+            <div class="message message-ai">
+              <div class="message-avatar ai">
+                <i class="fa-solid fa-robot" aria-hidden="true"></i>
+              </div>
+              <div class="message-bubble">
+                <p>Hello! I can help you understand this PDF. Ask me anything or try a suggested question below.</p>
+              </div>
+            </div>
+
+            <div class="message message-user">
+              <div class="message-bubble">
+                <p>What is the main topic of this document?</p>
+              </div>
+              <div class="message-avatar user">
+                <i class="fa-solid fa-user" aria-hidden="true"></i>
+              </div>
+            </div>
+
+            <div class="message message-ai">
+              <div class="message-avatar ai">
+                <i class="fa-solid fa-robot" aria-hidden="true"></i>
+              </div>
+              <div class="message-bubble">
+                <p>This document covers foundational machine learning concepts including supervised learning, neural networks, and model evaluation techniques.</p>
+              </div>
+            </div>
+
+            <div class="typing-indicator" id="typing-indicator" hidden>
+              <div class="message-avatar ai">
+                <i class="fa-solid fa-robot" aria-hidden="true"></i>
+              </div>
+              <div class="typing-dots">
+                <span></span><span></span><span></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="suggested-questions" id="suggested-questions">
+            <p class="suggested-label">Suggested questions</p>
+            <div class="suggested-list" id="suggested-list">
+              <!-- Populated by JavaScript -->
+            </div>
+          </div>
+
+          <div class="chat-input-area">
+            <textarea
+              id="chat-input"
+              class="text-input chat-textarea"
+              rows="2"
+              placeholder="Type your message..."
+              aria-label="Chat message input"
+            ></textarea>
+            <button type="button" class="btn btn-primary btn-icon" id="btn-send-chat" aria-label="Send message">
+              <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+            </button>
+          </div>
+        </section>
+
+        <!-- Section 5: PDF Summary -->
+        <section
+          class="panel-section"
+          id="section-summary"
+          data-section="summary"
+          aria-labelledby="nav-summary"
+          hidden
+        >
+          <div class="section-heading">
+            <h2 class="section-title">PDF Summary</h2>
+            <p class="section-desc">Generate AI-powered summaries</p>
+          </div>
+
+          <div class="summary-length-toggles">
+            <button type="button" class="btn btn-secondary length-toggle" data-length="short">Short</button>
+            <button type="button" class="btn btn-secondary length-toggle active" data-length="medium">Medium</button>
+            <button type="button" class="btn btn-secondary length-toggle" data-length="long">Long</button>
+          </div>
+
+          <button type="button" class="btn btn-primary btn-block" id="btn-generate-summary">
+            <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+            Generate Summary
+          </button>
+
+          <article class="glass-card summary-block">
+            <h3 class="card-heading">
+              <i class="fa-solid fa-crown" aria-hidden="true"></i>
+              <span>Executive Summary</span>
+              <button type="button" class="btn-icon copy-btn" title="Copy text" data-target="executive-summary">
+                <i class="fa-solid fa-copy"></i>
+              </button>
+            </h3>
+            <p class="card-body" id="executive-summary">
+              This PDF introduces core machine learning principles for beginners, covering data preprocessing, model training, and real-world applications across industries.
+            </p>
+          </article>
+
+          <article class="glass-card summary-block">
+            <h3 class="card-heading">
+              <i class="fa-solid fa-list-ul" aria-hidden="true"></i>
+              <span>Bullet Summary</span>
+              <button type="button" class="btn-icon copy-btn" title="Copy text" data-target="bullet-summary">
+                <i class="fa-solid fa-copy"></i>
+              </button>
+            </h3>
+            <ul class="bullet-list" id="bullet-summary">
+              <li>Defines supervised vs. unsupervised learning</li>
+              <li>Explains neural network architecture basics</li>
+              <li>Covers train/test split and cross-validation</li>
+              <li>Reviews common evaluation metrics (accuracy, F1)</li>
+            </ul>
+          </article>
+
+          <article class="glass-card summary-block">
+            <h3 class="card-heading">
+              <i class="fa-solid fa-book-open" aria-hidden="true"></i>
+              <span>Current Page Summary</span>
+              <button type="button" class="btn-icon copy-btn" title="Copy text" data-target="page-summary">
+                <i class="fa-solid fa-copy"></i>
+              </button>
+            </h3>
+            <p class="card-body" id="page-summary">
+              Page 15 discusses gradient descent optimization and how learning rates affect model convergence during training.
+            </p>
+          </article>
+
+          <button type="button" class="btn btn-secondary btn-block" id="btn-export-summary">
+            <i class="fa-solid fa-file-export" aria-hidden="true"></i>
+            Export Summary
+          </button>
+        </section>
+
+        <!-- Section 6: Question & Answer -->
+        <section
+          class="panel-section"
+          id="section-qa"
+          data-section="qa"
+          aria-labelledby="nav-qa"
+          hidden
+        >
+          <div class="section-heading">
+            <h2 class="section-title">Question &amp; Answer</h2>
+            <p class="section-desc">Get precise answers from your PDF</p>
+          </div>
+
+          <div class="input-group">
+            <input
+              type="text"
+              id="qa-question-input"
+              class="text-input"
+              placeholder="Ask a question about this PDF..."
+              aria-label="Question input"
+            />
+            <button type="button" class="btn btn-primary" id="btn-ask-question">
+              <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
+              Ask
+            </button>
+          </div>
+
+          <article class="glass-card answer-card" id="qa-answer-card">
+            <h3 class="card-heading">Answer</h3>
+            <p class="card-body" id="qa-answer-text">
+              Gradient descent is an iterative optimization algorithm used to minimize the loss function by adjusting model weights in the direction of steepest descent.
+            </p>
+
+            <div class="citation-block">
+              <span class="citation-label">
+                <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
+                Citation
+              </span>
+              <p class="citation-text" id="qa-citation">
+                "Gradient descent updates weights proportionally to the negative gradient of the loss." — Page 15, Paragraph 2
+              </p>
+            </div>
+          </article>
+        </section>
+
+
+        <!-- Section 8: Notes -->
+        <section
+          class="panel-section"
+          id="section-notes"
+          data-section="notes"
+          aria-labelledby="nav-notes"
+          hidden
+        >
+          <div class="section-heading">
+            <h2 class="section-title">Notes</h2>
+            <p class="section-desc">Capture insights while reading</p>
+          </div>
+
+          <button type="button" class="btn btn-secondary btn-block" id="btn-add-note">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i>
+            Add Note
+          </button>
+
+          <ul class="notes-list" id="notes-list" aria-label="Notes list">
+            <!-- Populated by JavaScript -->
+          </ul>
+        </section>
+
+        <!-- Section 9: Bookmarks -->
+        <section
+          class="panel-section"
+          id="section-bookmarks"
+          data-section="bookmarks"
+          aria-labelledby="nav-bookmarks"
+          hidden
+        >
+          <div class="section-heading">
+            <h2 class="section-title">Bookmarks</h2>
+            <p class="section-desc">Quick access to important pages</p>
+          </div>
+
+          <button type="button" class="btn btn-primary btn-block" id="btn-bookmark-page">
+            <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
+            Bookmark Current Page
+          </button>
+
+          <ul class="bookmarks-list" id="bookmarks-list" aria-label="Saved bookmarks">
+            <!-- Populated by JavaScript -->
+          </ul>
+        </section>
+
+        <!-- Section 10: History -->
+        <section
+          class="panel-section"
+          id="section-history"
+          data-section="history"
+          aria-labelledby="nav-history"
+          hidden
+        >
+          <div class="section-heading">
+            <h2 class="section-title">History</h2>
+            <p class="section-desc">Your recent activity</p>
+          </div>
+
+          <h3 class="subsection-title">Recent Chats</h3>
+          <ul class="history-list" id="recent-chats-list" aria-label="Recent chats">
+            <!-- Populated by JavaScript -->
+          </ul>
+
+          <h3 class="subsection-title">Recently Opened PDFs</h3>
+          <ul class="history-list" id="recent-pdfs-list" aria-label="Recently opened PDFs">
+            <!-- Populated by JavaScript -->
+          </ul>
+        </section>
+
+      </main>
+
+      <!-- ================================================================
+           Section 11: Footer
+           ================================================================ -->
+      <footer class="sidepanel-footer">
+
+        <div class="footer-stat">
+          <span class="footer-label">Storage</span>
+          <span class="footer-value" id="footer-storage">12.4 / 50 MB</span>
+        </div>
+
+        <div class="footer-stat">
+          <span class="footer-label">Version</span>
+          <span class="footer-value" id="footer-version">v1.0.0</span>
+        </div>
+      </footer>
+
+    </div>
+
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

@@ -22,6 +22,12 @@ class ChatResponse(BaseModel):
     success: bool
     answer: str
 
+class LocalUploadRequest(BaseModel):
+    """
+    Schema for the incoming request to load a local PDF directly from disk.
+    """
+    file_path: str
+
 class UploadResponse(BaseModel):
     """
     Schema for the outgoing response from the /upload-pdf endpoint.

@@ -189,7 +189,7 @@ async function getActiveTab() {
  * @param {number | undefined} tabId - Chrome tab ID
  * @param {string | undefined} url - Tab URL
  */
-function updatePdfDetectionState(tabId, url) {
+async function updatePdfDetectionState(tabId, url) {
   const isPdf = isPdfUrl(url);
 
   lastKnownPdfState = {
@@ -202,6 +202,22 @@ function updatePdfDetectionState(tabId, url) {
     tabId,
     url,
   });
+
+  if (isPdf && tabId) {
+    try {
+      const storedValues = await chrome.storage.local.get(STORAGE_KEYS.SETTINGS);
+      const settings = storedValues[STORAGE_KEYS.SETTINGS] || DEFAULT_SETTINGS;
+      if (settings.autoOpenSidePanel && chrome.sidePanel && chrome.sidePanel.open) {
+        // Ensure side panel is enabled for this tab
+        await chrome.sidePanel.setOptions({ tabId, enabled: true });
+        
+        // Open the side panel for this tab
+        await chrome.sidePanel.open({ tabId });
+      }
+    } catch (e) {
+      logMessage("Auto-open side panel failed", { error: e.message });
+    }
+  }
 }
 
 /**
@@ -521,27 +537,23 @@ async function handleExtractPdfText(payload, sender) {
     }
 
     if (pdfUrl.startsWith("file://")) {
-      logMessage("Local file detected. Fetching directly from background and uploading to backend...", { pdfUrl });
+      logMessage("Local file detected. Sending local path to backend...", { pdfUrl });
       
-      const response = await fetch(pdfUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch local file: ${response.statusText}`);
+      let localPath = decodeURIComponent(pdfUrl);
+      if (localPath.startsWith("file:///")) {
+        localPath = localPath.substring(8); // removes file:///
+        // If it doesn't look like a Windows drive letter (e.g. C:/), prepend a slash for Mac/Linux
+        if (!localPath.match(/^[a-zA-Z]:\//)) {
+          localPath = "/" + localPath;
+        }
       }
-      const blob = await response.blob();
       
-      let filename = "local_document.pdf";
-      try {
-        const decoded = decodeURIComponent(pdfUrl);
-        const parts = decoded.split('/');
-        filename = parts[parts.length - 1] || filename;
-      } catch (e) {}
-
-      const formData = new FormData();
-      formData.append("file", blob, filename);
-      
-      const uploadRes = await fetch("http://127.0.0.1:8000/upload-pdf", {
+      const uploadRes = await fetch("http://127.0.0.1:8000/upload-local-pdf", {
         method: "POST",
-        body: formData
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ file_path: localPath })
       });
       
       if (!uploadRes.ok) {

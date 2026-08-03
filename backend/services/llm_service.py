@@ -1,19 +1,29 @@
 # services/llm_service.py
-# This file handles all communication with the Google Gemini AI model.
+# This file handles all communication with the Anthropic Claude AI model via AgentRouter.
 
 import os
-from google import genai
-from google.genai import types
+from anthropic import Anthropic, APIError, APIConnectionError
 from dotenv import load_dotenv
 from typing import List
-
 
 # Load environment variables from a .env file located in the root directory
 load_dotenv()
 
+def get_agentrouter_client() -> Anthropic:
+    api_key = os.getenv("AGENTROUTER_API_KEY")
+    if not api_key:
+        raise ValueError("AGENTROUTER_API_KEY is missing in the .env file. Please add it.")
+        
+    base_url = os.getenv("AGENTROUTER_BASE_URL", "https://agentrouter.org")
+    return Anthropic(api_key=api_key, base_url=base_url)
+
+def get_claude_model() -> str:
+    return os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+
+
 def generate_response(context_chunks: List[str], question: str) -> str:
     """
-    Generates a highly accurate response using Google Gemini.
+    Generates a highly accurate response using Anthropic Claude via AgentRouter.
     It strictly uses ONLY the provided context chunks to answer the question.
     
     Args:
@@ -25,27 +35,23 @@ def generate_response(context_chunks: List[str], question: str) -> str:
         
     Raises:
         ValueError: If inputs are invalid or the API key is missing.
-        Exception: If the Gemini API request fails.
+        Exception: If the API request fails.
     """
     
-    # 1. Error Handling: Check for missing API key
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is missing in the .env file. Please add it.")
-
-    # 2. Error Handling: Check for empty context
+    # 1. Error Handling: Check for empty context
     if not context_chunks:
         raise ValueError("No context chunks provided. Cannot generate a response.")
         
-    # 3. Error Handling: Check for empty user question
+    # 2. Error Handling: Check for empty user question
     if not question or not question.strip():
         raise ValueError("The user question is empty. Please ask a valid question.")
 
     try:
-        # Initialize the Gemini client using the latest SDK
-        client = genai.Client(api_key=api_key)
+        # 3. Initialize the Anthropic client using AgentRouter config
+        client = get_agentrouter_client()
+        model_name = get_claude_model()
 
-        # 4. Strict System Instructions via SDK Config
+        # 4. Strict System Instructions
         system_instruction = (
             "You are an intelligent and accurate document-answering AI assistant. "
             "Your main job is to answer the user's question based on the provided context chunks. "
@@ -67,56 +73,58 @@ Based on the <context> above, please answer the following question:
 {question}
 """
 
-        # 6. Debug Prints (as requested)
+        # 6. Debug Prints
         print("\n=== DEBUG INFO ===")
         print(f"USER QUESTION: {question}")
-        # Only print the first 1000 characters so we don't flood the terminal
         print(f"CONTEXT (first 1000 chars):\n{combined_context[:1000]}...")
         print(f"COMPLETE PROMPT:\n{prompt}")
         print("==================\n")
 
-        # 7. Send request to Gemini
-        # We pass our system_instruction via the GenerateContentConfig object.
-        # We also set temperature to 0.0 to make the AI extremely factual and literal, reducing creativity/hallucinations.
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.0  
-            )
+        # 7. Send request to Claude via AgentRouter
+        response = client.messages.create(
+            model=model_name,
+            max_tokens=1024,
+            temperature=0.0,
+            system=system_instruction,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
         )
 
         # 8. Print the raw response for debugging
-        print(f"\n=== RAW GEMINI RESPONSE ===\n{response.text}\n===========================\n")
+        final_text = ""
+        for block in response.content:
+            if getattr(block, "type", "") == "text":
+                final_text += block.text
+                
+        print(f"\n=== RAW CLAUDE RESPONSE ===\n{final_text}\n===========================\n")
 
-        return response.text
+        return final_text
 
+    except APIConnectionError as e:
+        raise Exception(f"Failed to connect to AgentRouter API: {str(e)}")
+    except APIError as e:
+        raise Exception(f"AgentRouter API returned an error: {str(e)}")
     except Exception as e:
-        # Catch network or API limits
-        raise Exception(f"Failed to communicate with Gemini API: {str(e)}")
+        raise Exception(f"An unexpected error occurred during generate_response: {str(e)}")
+
 
 def generate_summary(pdf_text: str, summary_type: str) -> str:
     """
-    Generates a high-quality summary of the provided PDF text using Google Gemini.
+    Generates a high-quality summary of the provided PDF text using Anthropic Claude via AgentRouter.
     
     Args:
         pdf_text (str): The extracted text from the PDF document.
-        summary_type (str): The requested size/detail of the summary (minimum, medium, large).
+        summary_type (str): The requested size/detail of the summary (small, medium, large).
         
     Returns:
         str: The generated summary.
         
     Raises:
         ValueError: If inputs are invalid or the API key is missing.
-        Exception: If the Gemini API request fails.
+        Exception: If the API request fails.
     """
     
-    # 1. Error Handling
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY is missing in the .env file. Please add it.")
-
     if not pdf_text or not pdf_text.strip():
         raise ValueError("The provided PDF text is empty. Cannot generate a summary.")
         
@@ -125,10 +133,11 @@ def generate_summary(pdf_text: str, summary_type: str) -> str:
         raise ValueError(f"Invalid summary_type. Must be one of: {', '.join(valid_types)}")
 
     try:
-        # 2. Initialize Client
-        client = genai.Client(api_key=api_key)
+        # 1. Initialize Client via AgentRouter config
+        client = get_agentrouter_client()
+        model_name = get_claude_model()
 
-        # 3. Dynamic System Instructions based on summary_type
+        # 2. Dynamic System Instructions based on summary_type
         base_instruction = (
             "You are an expert summarization AI. Your ONLY job is to summarize the provided PDF text. "
             "Do NOT use any outside knowledge. Do NOT hallucinate. "
@@ -154,7 +163,7 @@ def generate_summary(pdf_text: str, summary_type: str) -> str:
             
         system_instruction = base_instruction + style_instruction
 
-        # 4. Prompt Generation
+        # 3. Prompt Generation
         prompt = f"""
 Please provide a {summary_type} summary of the following text extracted from a PDF document:
 <pdf_text>
@@ -165,19 +174,28 @@ Please provide a {summary_type} summary of the following text extracted from a P
         print(f"\n=== GENERATING {summary_type.upper()} SUMMARY ===")
         print(f"PDF TEXT (first 500 chars):\n{pdf_text[:500]}...")
 
-        # 5. API Request
-        # Temperature slightly higher (0.2) than QA (0.0) to allow for better phrasing while remaining factual
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.2  
-            )
+        # 4. API Request
+        response = client.messages.create(
+            model=model_name,
+            max_tokens=2048,
+            temperature=0.2,
+            system=system_instruction,
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
         )
 
-        print("=== SUMMARY GENERATED SUCESSFULLY ===\n")
-        return response.text
+        final_text = ""
+        for block in response.content:
+            if getattr(block, "type", "") == "text":
+                final_text += block.text
+                
+        print("=== SUMMARY GENERATED SUCCESSFULLY ===\n")
+        return final_text
 
+    except APIConnectionError as e:
+        raise Exception(f"Failed to connect to AgentRouter API for summarization: {str(e)}")
+    except APIError as e:
+        raise Exception(f"AgentRouter API returned an error for summarization: {str(e)}")
     except Exception as e:
-        raise Exception(f"Failed to communicate with Gemini API for summarization: {str(e)}")
+        raise Exception(f"An unexpected error occurred during generate_summary: {str(e)}")

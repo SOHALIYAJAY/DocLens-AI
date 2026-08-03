@@ -1,7 +1,7 @@
 fastapi
 uvicorn
 pydantic
-google-genai
+anthropic
 PyMuPDF
 sentence-transformers==2.5.1
 chromadb

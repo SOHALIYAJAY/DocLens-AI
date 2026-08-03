@@ -3,9 +3,9 @@ import io
 import os
 import tempfile
 import time
-from google import genai
+import base64
+from anthropic import Anthropic, APIError, APIConnectionError
 from dotenv import load_dotenv
-# pyrefly: ignore [missing-import]
 import fitz  # PyMuPDF text preserverd properly structurewise
 
 load_dotenv()
@@ -46,56 +46,64 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
         # 2. Check if we need to fallback to OCR
         # If the extracted text is very short compared to the number of pages, it's likely scanned.
         if total_text_length < (num_pages * 50) or total_text_length < 100:
-            print("Scanned PDF detected (low text volume). Falling back to Gemini OCR...")
+            print("Scanned PDF detected (low text volume). Falling back to Claude OCR via AgentRouter...")
             
-            api_key = os.getenv("GEMINI_API_KEY")
+            api_key = os.getenv("AGENTROUTER_API_KEY")
             if not api_key:
-                raise ValueError("GEMINI_API_KEY is missing. Cannot perform OCR.")
+                raise ValueError("AGENTROUTER_API_KEY is missing. Cannot perform OCR.")
                 
-            client = genai.Client(api_key=api_key)
+            base_url = os.getenv("AGENTROUTER_BASE_URL", "https://agentrouter.org")
+            model_name = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
             
-            # Save bytes to a temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                tmp_file.write(file_bytes)
-                tmp_file_path = tmp_file.name
-                
+            client = Anthropic(api_key=api_key, base_url=base_url)
+            
+            print("Extracting text via Claude (AgentRouter)...")
+            pdf_base64 = base64.b64encode(file_bytes).decode("utf-8")
+            
             try:
-                # Upload file to Gemini
-                print("Uploading PDF to Gemini...")
-                uploaded_file = client.files.upload(file=tmp_file_path)
-                
-                # Wait briefly for file to be processed if needed
-                while getattr(uploaded_file, "state", None) and getattr(uploaded_file.state, "name", "") == "PROCESSING":
-                    print("Waiting for file processing...")
-                    time.sleep(2)
-                    uploaded_file = client.files.get(name=uploaded_file.name)
-                
-                # Ask Gemini to extract text
-                print("Extracting text via Gemini...")
-                prompt = (
-                    "This is a scanned PDF document. Please transcribe all the text exactly as it appears. "
-                    "Do not summarize or omit anything. Maintain the original structure where possible."
-                )
-                
-                response = client.models.generate_content(
-                    model="gemini-1.5-flash",
-                    contents=[uploaded_file, prompt]
-                )
-                
-                extracted_text = response.text.strip()
-                extracted_pages = [{"page": 1, "text": extracted_text}]  # Gemini OCR returns a single block currently
-                
-                # Clean up file on Google servers
-                try:
-                    client.files.delete(name=uploaded_file.name)
-                except Exception as del_err:
-                    print(f"Warning: could not delete file from Gemini servers: {del_err}")
-                print("OCR Extraction complete.")
-                
-            finally:
-                # Always clean up local temp file
-                if os.path.exists(tmp_file_path):
-                    os.remove(tmp_file_path)
+                response = client.beta.messages.create(
+                    model=model_name,
+                betas=["pdfs-2024-09-25"],
+                max_tokens=4096,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "document",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "application/pdf",
+                                    "data": pdf_base64
+                                }
+                            },
+                            {
+                                "type": "text",
+                                "text": (
+                                    "This is a scanned PDF document. Please transcribe all the text exactly as it appears. "
+                                    "Do not summarize or omit anything. Maintain the original structure where possible."
+                                )
+                            }
+                        ]
+                    }
+                ]
+            )
+            
+            except APIConnectionError as e:
+                raise Exception(f"Failed to connect to AgentRouter API during OCR: {str(e)}")
+            except APIError as e:
+                raise Exception(f"AgentRouter API returned an error during OCR: {str(e)}")
+            except Exception as e:
+                raise Exception(f"An unexpected error occurred during OCR extraction: {str(e)}")
+            
+            final_text = ""
+            for block in response.content:
+                if getattr(block, "type", "") == "text":
+                    final_text += block.text
+            
+            extracted_text = final_text.strip()
+            extracted_pages = [{"page": 1, "text": extracted_text}]
+            print("OCR Extraction complete.")
                     
         return extracted_pages
     except Exception as e:

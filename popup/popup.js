@@ -69,9 +69,44 @@ function formatMarkdown(text) {
   // 3. Wrap consecutive <li> tags in <ul>
   html = html.replace(/(<li>.*<\/li>\n?)+/g, match => `<ul style="margin: 8px 0; padding-left: 20px; list-style-type: disc;">${match}</ul>`);
   
+  // 3.5 Parse tables
+  html = html.replace(/(?:(?:\|.*\|)\s*\n?)+/g, match => {
+     if (!match.match(/\|[-\s|:]+\|/)) {
+        return match;
+     }
+     let rows = match.trim().split('\n');
+     let tableHtml = '<table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 13px;">';
+     
+     let isHeader = true;
+     for (let i = 0; i < rows.length; i++) {
+         let row = rows[i].trim();
+         if (row.match(/^\|[-\s|:]+\|$/)) {
+             isHeader = false;
+             continue;
+         }
+         
+         let cells = row.split('|');
+         if (cells.length > 0 && cells[0].trim() === '') cells.shift();
+         if (cells.length > 0 && cells[cells.length - 1].trim() === '') cells.pop();
+         
+         tableHtml += '<tr>';
+         let tag = isHeader ? 'th' : 'td';
+         let style = isHeader 
+           ? 'border: 1px solid #555; padding: 6px; background-color: rgba(255,255,255,0.1); text-align: left; font-weight: bold;' 
+           : 'border: 1px solid #555; padding: 6px;';
+           
+         cells.forEach(cell => {
+             tableHtml += `<${tag} style="${style}">${cell.trim()}</${tag}>`;
+         });
+         tableHtml += '</tr>';
+     }
+     tableHtml += '</table>';
+     return tableHtml;
+  });
+  
   // 4. Wrap blocks in <p> and replace remaining single newlines with <br>
   html = html.split(/\n{2,}/).map(block => {
-    if (block.trim().startsWith('<ul')) {
+    if (block.trim().startsWith('<ul') || block.trim().startsWith('<table')) {
       return block;
     }
     return `<p style="margin-bottom: 8px;">${block.replace(/\n/g, '<br>')}</p>`;

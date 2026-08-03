@@ -2,7 +2,8 @@
 # This file defines the actual API routes (endpoints) that clients will call.
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from models.schemas import ChatRequest, ChatResponse, UploadResponse, SummaryRequest, SummaryResponse
+import os
+from models.schemas import ChatRequest, ChatResponse, UploadResponse, SummaryRequest, SummaryResponse, LocalUploadRequest
 from services.llm_service import generate_response, generate_summary
 from services.pdf_service import extract_text_from_pdf
 from services.chunk_service import chunk_text
@@ -41,6 +42,38 @@ async def upload_pdf(file: UploadFile = File(...)):
         return UploadResponse(
             success=True,
             filename=file.filename,
+            num_chunks=len(chunks)
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/upload-local-pdf", response_model=UploadResponse)
+async def upload_local_pdf(request: LocalUploadRequest):
+    """
+    Endpoint to load a local PDF directly from the filesystem (useful for file:// URLs).
+    """
+    if not os.path.exists(request.file_path):
+        raise HTTPException(status_code=404, detail="Local file not found on backend.")
+    if not request.file_path.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+        
+    try:
+        # Read file bytes directly from local filesystem
+        with open(request.file_path, 'rb') as f:
+            file_bytes = f.read()
+            
+        pdf_pages = extract_text_from_pdf(file_bytes)
+        if not pdf_pages:
+            raise HTTPException(status_code=400, detail="Could not extract text from PDF")
+            
+        chunks = chunk_text(pdf_pages)
+        
+        clear_knowledge_base()
+        add_to_knowledge_base(chunks)
+        
+        return UploadResponse(
+            success=True,
+            filename=os.path.basename(request.file_path),
             num_chunks=len(chunks)
         )
     except Exception as e:

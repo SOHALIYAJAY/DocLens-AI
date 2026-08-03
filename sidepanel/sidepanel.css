@@ -26,7 +26,7 @@
   --color-text-subtle: #64748b;
   --color-success: #22c55e;
 
-  --panel-width: 420px;
+  --panel-width: 550px;
   --header-height: 68px;
   --nav-height: 52px;
   --footer-height: 56px;
@@ -95,8 +95,14 @@ ul {
 .sidepanel {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  width: 100%;
+  height: calc(100vh - 64px);
+  width: calc(100% - 24px);
+  max-width: var(--panel-width);
+  margin: 32px auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
   background:
     radial-gradient(ellipse at top right, rgba(139, 92, 246, 0.1), transparent 50%),
     radial-gradient(ellipse at bottom left, rgba(59, 130, 246, 0.08), transparent 45%),

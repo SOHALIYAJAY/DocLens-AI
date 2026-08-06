@@ -35,6 +35,7 @@ class UploadResponse(BaseModel):
     success: bool
     filename: str
     num_chunks: int
+    images: list[dict] = Field(default=[], description="List of extracted images with metadata (image_id, page, format)")
 
 # ==========================================
 # Summarization Schemas
@@ -58,3 +59,26 @@ class SummaryResponse(BaseModel):
     """
     success: bool
     summary: str
+
+# ==========================================
+# Image Explanation Schemas
+# ==========================================
+class ImageExplanationResponse(BaseModel):
+    """
+    Schema for the outgoing response from the /image/explain endpoint.
+    """
+    success: bool
+    title: str = Field(description="A concise title for the image")
+    summary: str = Field(description="A short summary of what the image represents")
+    explanation: str = Field(description="A detailed explanation of the image contents")
+    important_components: list[str] = Field(description="Important components or objects identified")
+    relationships: list[str] = Field(description="Relationships between components or flows")
+    key_takeaways: list[str] = Field(description="Key takeaways from the image")
+    real_world_application: str = Field(description="Real-world application of the concept")
+
+class ExplainImageRequest(BaseModel):
+    """
+    Schema for the incoming request to the /explain-image endpoint.
+    """
+    image_id: str = Field(description="The ID of the image to explain")
+    prompt: Optional[str] = Field(default=None, description="Optional prompt to guide the explanation")

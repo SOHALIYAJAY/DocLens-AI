@@ -63,19 +63,13 @@ async function updateReadingProgress(pdfId, updates) {
 }
 
 /* ==========================================================================
-   Bookmarks
+   Bookmarks (Delegated to BookmarkService)
    ========================================================================== */
 
-const BOOKMARKS_KEY = "global_bookmarks";
-
-/**
- * Saves a bookmark for a specific PDF page.
- * 
- * @param {string} pdfId - URL or unique identifier of the PDF.
- * @param {string} title - Title of the PDF or page.
- * @param {number} pageNumber - The page number being bookmarked.
- */
 async function saveBookmark(pdfId, title, pageNumber) {
+  if (typeof BookmarkService !== "undefined") {
+    return await BookmarkService.addBookmark({ pdfId, title, pageNumber });
+  }
   const bookmarks = await getBookmarks();
   const newBookmark = {
     id: `bm-${Date.now()}`,
@@ -84,31 +78,36 @@ async function saveBookmark(pdfId, title, pageNumber) {
     pageNumber: pageNumber || 1,
     timestamp: new Date().toISOString()
   };
-  
   bookmarks.push(newBookmark);
-  await chrome.storage.local.set({ [BOOKMARKS_KEY]: bookmarks });
+  await chrome.storage.local.set({ global_bookmarks: bookmarks });
   return newBookmark;
 }
 
-/**
- * Retrieves all saved bookmarks across all PDFs.
- * 
- * @returns {Array} List of bookmarks.
- */
-async function getBookmarks() {
-  const result = await chrome.storage.local.get([BOOKMARKS_KEY]);
-  return result[BOOKMARKS_KEY] || [];
+async function getBookmarks(pdfId = null) {
+  if (typeof BookmarkService !== "undefined") {
+    return await BookmarkService.getBookmarks(pdfId);
+  }
+  const result = await chrome.storage.local.get(["global_bookmarks"]);
+  const all = result["global_bookmarks"] || [];
+  if (!pdfId) return all;
+  return all.filter(b => b.pdfId === pdfId);
 }
 
-/**
- * Deletes a bookmark by ID.
- * 
- * @param {string} bookmarkId - The ID of the bookmark to delete.
- */
+async function updateBookmark(bookmarkId, newTitle) {
+  if (typeof BookmarkService !== "undefined") {
+    return await BookmarkService.updateBookmark(bookmarkId, newTitle);
+  }
+  throw new Error("BookmarkService unavailable");
+}
+
 async function deleteBookmark(bookmarkId) {
+  if (typeof BookmarkService !== "undefined") {
+    await BookmarkService.deleteBookmark(bookmarkId);
+    return { deleted: true };
+  }
   let bookmarks = await getBookmarks();
   bookmarks = bookmarks.filter(b => b.id !== bookmarkId);
-  await chrome.storage.local.set({ [BOOKMARKS_KEY]: bookmarks });
+  await chrome.storage.local.set({ global_bookmarks: bookmarks });
   return { deleted: true };
 }
 
@@ -121,6 +120,7 @@ if (typeof module !== 'undefined' && module.exports) {
     updateReadingProgress,
     saveBookmark,
     getBookmarks,
+    updateBookmark,
     deleteBookmark
   };
 } else if (typeof window !== 'undefined') {
@@ -130,5 +130,6 @@ if (typeof module !== 'undefined' && module.exports) {
   window.updateReadingProgress = updateReadingProgress;
   window.saveBookmark = saveBookmark;
   window.getBookmarks = getBookmarks;
+  window.updateBookmark = updateBookmark;
   window.deleteBookmark = deleteBookmark;
 }

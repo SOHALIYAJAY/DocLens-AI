@@ -11,6 +11,7 @@
    Dependencies
    ========================================================================== */
 
+importScripts('../services/bookmark-service.js');
 importScripts('../services/storage-service.js');
 
 /* ==========================================================================
@@ -36,13 +37,17 @@ const MESSAGE_ACTIONS = {
   TEST_CONNECTION: "TEST_CONNECTION",
   EXTRACT_PDF_TEXT: "EXTRACT_PDF_TEXT",
   EXTRACTED_TEXT_RESULT: "EXTRACTED_TEXT_RESULT",
+  EXTRACT_IMAGES: "EXTRACT_IMAGES",
+  EXPLAIN_IMAGE: "EXPLAIN_IMAGE",
   SAVE_PROGRESS: "SAVE_PROGRESS",
   GET_PROGRESS: "GET_PROGRESS",
   DELETE_PROGRESS: "DELETE_PROGRESS",
   UPLOAD_PDF: "UPLOAD_PDF",
   SAVE_BOOKMARK: "SAVE_BOOKMARK",
   GET_BOOKMARKS: "GET_BOOKMARKS",
+  UPDATE_BOOKMARK: "UPDATE_BOOKMARK",
   DELETE_BOOKMARK: "DELETE_BOOKMARK",
+  SEARCH_BOOKMARKS: "SEARCH_BOOKMARKS",
 };
 
 /** Keys used with chrome.storage.local */
@@ -60,7 +65,7 @@ const DEFAULT_SETTINGS = {
   aiModel: "gpt-4o-mini",
   apiKey: "",
   summaryLength: "medium",
-  autoOpenSidePanel: true,
+  autoOpenSidePanel: false,
   rememberRecentPdfs: true,
   theme: "dark",
   fontSize: "medium",
@@ -179,7 +184,7 @@ function isPdfUrl(url) {
  * @returns {Promise<chrome.tabs.Tab | null>} Active tab or null if unavailable
  */
 async function getActiveTab() {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   return tabs[0] ?? null;
 }
 
@@ -198,26 +203,11 @@ async function updatePdfDetectionState(tabId, url) {
     isPdf,
   };
 
-  logMessage(isPdf ? "PDF detected in tab" : "No PDF detected in tab", {
-    tabId,
-    url,
-  });
-
-  if (isPdf && tabId) {
-    try {
-      const storedValues = await chrome.storage.local.get(STORAGE_KEYS.SETTINGS);
-      const settings = storedValues[STORAGE_KEYS.SETTINGS] || DEFAULT_SETTINGS;
-      if (settings.autoOpenSidePanel && chrome.sidePanel && chrome.sidePanel.open) {
-        // Ensure side panel is enabled for this tab
-        await chrome.sidePanel.setOptions({ tabId, enabled: true });
-        
-        // Open the side panel for this tab
-        await chrome.sidePanel.open({ tabId });
-      }
-    } catch (e) {
-      logMessage("Auto-open side panel failed", { error: e.message });
-    }
+  if (isPdf) {
+    logMessage("PDF detected in tab", { tabId, url });
   }
+
+
 }
 
 /**
@@ -442,6 +432,96 @@ async function handleSummarizePdf(payload) {
 }
 
 /**
+ * Handles extract-images requests.
+ */
+async function handleExtractImages(payload) {
+  logMessage("EXTRACT_IMAGES handled", { payload });
+  
+  const activeTab = await getActiveTab();
+  if (!activeTab || !isPdfUrl(activeTab.url)) {
+    throw new Error("No active PDF found to extract images from.");
+  }
+  
+  try {
+    let pdfUrl = activeTab.url;
+    if (pdfUrl.includes("mhjfbmdgcfjbbpaeojofohoefgiehjai") && pdfUrl.includes("url=")) {
+      try {
+        const urlObj = new URL(pdfUrl);
+        const actualUrl = urlObj.searchParams.get("url");
+        if (actualUrl) {
+          pdfUrl = actualUrl;
+        }
+      } catch (e) {}
+    }
+
+    let response;
+    if (pdfUrl.startsWith("file://")) {
+      let localPath = decodeURIComponent(pdfUrl);
+      if (localPath.startsWith("file:///")) {
+        localPath = localPath.substring(8);
+        if (!localPath.match(/^[a-zA-Z]:\//)) {
+          localPath = "/" + localPath;
+        }
+      }
+      
+      response = await fetch("http://127.0.0.1:8000/extract-images", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_path: localPath })
+      });
+    } else if (pdfUrl.startsWith("http")) {
+      const pdfRes = await fetch(pdfUrl);
+      if (!pdfRes.ok) throw new Error(`Failed to fetch PDF: ${pdfRes.statusText}`);
+      
+      const blob = await pdfRes.blob();
+      const formData = new FormData();
+      formData.append("file", blob, "document.pdf");
+      
+      response = await fetch("http://127.0.0.1:8000/extract-images", {
+        method: "POST",
+        body: formData
+      });
+    } else {
+      throw new Error("Cannot extract images from this type of URL.");
+    }
+    
+    if (!response.ok) {
+      throw new Error(`Extract images failed: ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    return { ...result, action: MESSAGE_ACTIONS.EXTRACT_IMAGES };
+  } catch (error) {
+    logMessage("EXTRACT_IMAGES Error", { error: error.message });
+    throw error;
+  }
+}
+
+/**
+ * Handles explain-image requests.
+ */
+async function handleExplainImage(payload) {
+  logMessage("EXPLAIN_IMAGE handled");
+  try {
+    const response = await fetch("http://127.0.0.1:8000/image/explain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ image_id: payload.image_id, prompt: payload.prompt }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Explain image failed: ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    return { ...result, action: MESSAGE_ACTIONS.EXPLAIN_IMAGE };
+  } catch (error) {
+    logMessage("EXPLAIN_IMAGE Error", { error: error.message });
+    throw error;
+  }
+}
+
+/**
  * Placeholder handler for ask-question requests.
  *
  * @param {Record<string, unknown>} payload - Optional message payload
@@ -557,35 +637,89 @@ async function handleExtractPdfText(payload, sender) {
       });
       
       if (!uploadRes.ok) {
-        throw new Error(`Backend upload failed: ${uploadRes.statusText}`);
+        let errDetail = uploadRes.statusText;
+        try {
+          const errJson = await uploadRes.json();
+          if (errJson && errJson.detail) errDetail = errJson.detail;
+        } catch (_) {}
+        throw new Error(`Backend upload failed: ${errDetail}`);
       }
       
       const result = await uploadRes.json();
-      
+      const textMsg = `Extracted ${result.num_chunks} chunks via backend upload. You can now chat or summarize!`;
+      await chrome.storage.local.set({
+        lastExtractedText: textMsg,
+        lastExtractedImages: result.images || []
+      });
+
       chrome.runtime.sendMessage({ 
         action: "EXTRACTED_TEXT_RESULT", 
         success: true, 
-        text: `Extracted ${result.num_chunks} chunks via backend upload. You can now chat or summarize!`,
+        text: textMsg,
+        images: result.images || [],
         error: null
       });
       
       return "Extraction initiated via background upload";
+    } else if (pdfUrl.startsWith("http")) {
+      logMessage("Web URL detected. Fetching PDF and uploading to backend...", { pdfUrl });
+      
+      const response = await fetch(pdfUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch PDF from URL: ${response.statusText}`);
+      }
+      
+      const blob = await response.blob();
+      const formData = new FormData();
+      // Fastapi expects the file field name to be 'file' based on the endpoint definition
+      formData.append("file", blob, "document.pdf");
+      
+      const uploadRes = await fetch("http://127.0.0.1:8000/upload-pdf", {
+        method: "POST",
+        body: formData
+      });
+      
+      if (!uploadRes.ok) {
+        let errDetail = uploadRes.statusText;
+        try {
+          const errJson = await uploadRes.json();
+          if (errJson && errJson.detail) errDetail = errJson.detail;
+        } catch (_) {}
+        throw new Error(`Backend upload failed: ${errDetail}`);
+      }
+      
+      const result = await uploadRes.json();
+      const textMsg = `Extracted ${result.num_chunks} chunks via backend upload. You can now chat or summarize!`;
+      await chrome.storage.local.set({
+        lastExtractedText: textMsg,
+        lastExtractedImages: result.images || []
+      });
+
+      chrome.runtime.sendMessage({ 
+        action: "EXTRACTED_TEXT_RESULT", 
+        success: true, 
+        text: textMsg,
+        images: result.images || [],
+        error: null
+      });
+      
+      return "Extraction initiated via background upload (HTTP)";
+    } else {
+      // Inject scripts into the PDF tab (for fallback scenarios, if not file:// or http://)
+      await chrome.scripting.executeScript({
+        target: { tabId: activeTab.id },
+        files: ["assets/pdf.min.js", "content/content.js"]
+      });
+
+      // Command the injected content script to start extraction
+      chrome.tabs.sendMessage(activeTab.id, { action: "START_EXTRACTION" });
     }
-
-    // Inject scripts into the PDF tab (for non-local or fallback scenarios)
-    await chrome.scripting.executeScript({
-      target: { tabId: activeTab.id },
-      files: ["assets/pdf.min.js", "content/content.js"]
-    });
-
-    // Command the injected content script to start extraction
-    chrome.tabs.sendMessage(activeTab.id, { action: "START_EXTRACTION" });
   } catch (error) {
-    logMessage("Script injection failed", { error: error.message });
+    logMessage("PDF processing failed", { error: error.message });
     chrome.runtime.sendMessage({ 
       action: "EXTRACTED_TEXT_RESULT", 
       success: false, 
-      error: "Cannot read this PDF page (it might be a protected browser page)." 
+      error: "Cannot read this PDF page (it might be a protected browser page or unreachable). " + error.message
     });
   }
 
@@ -607,6 +741,7 @@ async function handleExtractedTextResult(payload, sender) {
     action: "EXTRACTED_TEXT_RESULT",
     success: payload.success,
     text: payload.text,
+    images: payload.images || [],
     error: payload.error
   });
 
@@ -667,48 +802,66 @@ async function handleDeleteProgress(payload, sender) {
    ========================================================================== */
 
 async function handleGetBookmarks(payload, sender) {
-  const bookmarks = await getBookmarks();
-  logMessage("Retrieved bookmarks", { count: bookmarks.length });
+  const pdfId = payload?.pdfId || null;
+  const bookmarks = await BookmarkService.getBookmarks(pdfId);
+  logMessage("Retrieved bookmarks", { count: bookmarks.length, pdfId });
   return bookmarks;
 }
 
+async function handleSearchBookmarks(payload, sender) {
+  const pdfId = payload?.pdfId || null;
+  const query = payload?.query || "";
+  const sortBy = payload?.sortBy || "page-asc";
+  const bookmarks = await BookmarkService.searchBookmarks(pdfId, query, sortBy);
+  return bookmarks;
+}
+
+async function handleUpdateBookmark(payload, sender) {
+  if (!payload || !payload.bookmarkId || !payload.title) {
+    throw new Error("Missing bookmarkId or title in payload");
+  }
+  const updated = await BookmarkService.updateBookmark(payload.bookmarkId, payload.title);
+  logMessage("Updated bookmark", { bookmarkId: payload.bookmarkId });
+  return updated;
+}
+
 async function handleDeleteBookmark(payload, sender) {
-  if (!payload.bookmarkId) {
+  if (!payload || !payload.bookmarkId) {
     throw new Error("Missing bookmarkId in payload");
   }
-  await deleteBookmark(payload.bookmarkId);
+  await BookmarkService.deleteBookmark(payload.bookmarkId);
   logMessage("Deleted bookmark", { bookmarkId: payload.bookmarkId });
   return { deleted: true };
 }
 
 async function handleSaveBookmark(payload, sender) {
-  let pdfId = payload.pdfId;
-  let title = payload.title;
-  let pageNumber = payload.pageNumber;
+  let pdfId = payload?.pdfId;
+  let title = payload?.title;
+  let pageNumber = payload?.pageNumber;
 
-  if (!pdfId || !title) {
+  if (!pdfId || !title || !pageNumber) {
     const activeTab = await getActiveTab();
     if (activeTab && isPdfUrl(activeTab.url)) {
       try {
         const response = await chrome.tabs.sendMessage(activeTab.id, { action: "GET_PAGE_INFO" });
         if (response && response.success && response.data) {
-          pdfId = response.data.url;
-          title = response.data.title;
-          pageNumber = response.data.pageNumber || 1;
+          pdfId = pdfId || response.data.url;
+          pageNumber = pageNumber || response.data.pageNumber || 1;
+          title = title || `Bookmark - Page ${pageNumber}`;
         }
       } catch (err) {
         logMessage("Failed to get page info from content script", { error: err.message });
-        pdfId = activeTab.url;
-        title = activeTab.title;
-        pageNumber = 1;
+        pdfId = pdfId || activeTab.url;
+        title = title || activeTab.title || "PDF Bookmark";
+        pageNumber = pageNumber || 1;
       }
     } else {
       throw new Error("No PDF active in the current tab to bookmark.");
     }
   }
 
-  const result = await saveBookmark(pdfId, title, pageNumber);
-  logMessage("Saved bookmark", { pdfId });
+  const result = await BookmarkService.addBookmark({ pdfId, title, pageNumber });
+  logMessage("Saved bookmark", { pdfId, pageNumber });
   return result;
 }
 
@@ -736,12 +889,16 @@ const MESSAGE_HANDLERS = {
   [MESSAGE_ACTIONS.TEST_CONNECTION]: handleTestConnection,
   [MESSAGE_ACTIONS.EXTRACT_PDF_TEXT]: handleExtractPdfText,
   [MESSAGE_ACTIONS.EXTRACTED_TEXT_RESULT]: handleExtractedTextResult,
+  [MESSAGE_ACTIONS.EXTRACT_IMAGES]: handleExtractImages,
+  [MESSAGE_ACTIONS.EXPLAIN_IMAGE]: handleExplainImage,
   [MESSAGE_ACTIONS.SAVE_PROGRESS]: handleSaveProgress,
   [MESSAGE_ACTIONS.GET_PROGRESS]: handleGetProgress,
   [MESSAGE_ACTIONS.DELETE_PROGRESS]: handleDeleteProgress,
   [MESSAGE_ACTIONS.SAVE_BOOKMARK]: handleSaveBookmark,
   [MESSAGE_ACTIONS.GET_BOOKMARKS]: handleGetBookmarks,
+  [MESSAGE_ACTIONS.UPDATE_BOOKMARK]: handleUpdateBookmark,
   [MESSAGE_ACTIONS.DELETE_BOOKMARK]: handleDeleteBookmark,
+  [MESSAGE_ACTIONS.SEARCH_BOOKMARKS]: handleSearchBookmarks,
 };
 
 /**
@@ -800,7 +957,6 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
   try {
     await initializeDefaultSettings();
-    await configureSidePanel();
     logMessage("Installation setup completed successfully");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Installation setup failed";

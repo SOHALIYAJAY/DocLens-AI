@@ -27,43 +27,61 @@
 
   <body>
     <div class="sidepanel" role="application" aria-label="AI PDF Assistant Workspace">
-      <header class="sidepanel-header">
-        <div class="header-left">
-          <div class="logo" aria-hidden="true">
-            <i class="fa-solid fa-file-pdf"></i>
-          </div>
-          <div class="header-info">
-            <h1 class="header-title">AI PDF Assistant</h1>
-            <p class="header-pdf-name" id="header-pdf-name" title="Machine Learning Basics.pdf">
-              Machine Learning Basics.pdf
-            </p>
-          </div>
+      <div class="pdf-file-bar" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; background: rgba(0, 0, 0, 0.2); border-bottom: 1px solid var(--color-border); flex-shrink: 0;">
+        <span class="header-pdf-name" id="header-pdf-name" style="font-size: 12px; color: var(--color-text-muted); font-weight: 500; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+          <i class="fa-solid fa-file-pdf" style="color: var(--color-primary);"></i>
+          <span>Document Active</span>
+        </span>
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <button
+            type="button"
+            class="icon-btn"
+            id="btn-refresh-sidebar"
+            aria-label="Refresh Sidebar"
+            title="Refresh Sidebar"
+            style="width: 28px; height: 28px;"
+          >
+            <i class="fa-solid fa-rotate" style="font-size: 13px;"></i>
+          </button>
+          <button
+            type="button"
+            class="icon-btn"
+            id="btn-quick-bookmarks"
+            aria-label="Open Stored Bookmarks"
+            title="Stored Bookmarks List"
+            style="width: 28px; height: 28px; color: var(--color-accent);"
+          >
+            <i class="fa-solid fa-bookmark" style="font-size: 13px;"></i>
+          </button>
+          <button
+            type="button"
+            class="icon-btn"
+            id="btn-settings"
+            aria-label="Open settings"
+            title="Settings"
+            style="width: 28px; height: 28px;"
+          >
+            <i class="fa-solid fa-gear" style="font-size: 13px;"></i>
+          </button>
         </div>
+      </div>
 
-        <button
-          type="button"
-          class="icon-btn"
-          id="btn-settings"
-          aria-label="Open settings"
-          title="Settings"
-        >
-          <i class="fa-solid fa-gear"></i>
+      <!-- PDF Actions (Extract button) -->
+      <div class="pdf-actions-container" style="padding: 12px 16px; border-bottom: 1px solid var(--color-border); background: rgba(15, 23, 42, 0.4); display: flex; flex-direction: column; gap: 8px;">
+        <button type="button" class="btn btn-primary btn-block" id="btn-extract-pdf" style="background: #10a37f; border-color: #10a37f; color: #fff; padding: 10px; font-weight: 600; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; width: 100%;">
+          <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
+          <span>Extract Text &amp; Images from PDF</span>
         </button>
-      </header>
+        <div id="extraction-status-area" style="display: none; padding: 8px 12px; background: rgba(6, 182, 212, 0.1); border-left: 3px solid var(--color-primary); border-radius: 4px; font-size: 12px; color: var(--color-text-muted);">
+          <!-- Content populated by JS -->
+        </div>
+      </div>
 
-      <!-- ================================================================
-           Section 2: Navigation
-           ================================================================ -->
+      <!-- Navigation -->
       <nav class="sidepanel-nav" aria-label="Main navigation">
         <ul class="nav-list" id="nav-list">
           <li>
-            <button type="button" class="nav-item active" data-section="dashboard">
-              <i class="fa-solid fa-gauge-high" aria-hidden="true"></i>
-              <span>Dashboard</span>
-            </button>
-          </li>
-          <li>
-            <button type="button" class="nav-item" data-section="chat">
+            <button type="button" class="nav-item active" data-section="chat">
               <i class="fa-solid fa-comments" aria-hidden="true"></i>
               <span>AI Chat</span>
             </button>
@@ -80,11 +98,10 @@
               <span>Q&amp;A</span>
             </button>
           </li>
-
           <li>
-            <button type="button" class="nav-item" data-section="notes">
-              <i class="fa-solid fa-note-sticky" aria-hidden="true"></i>
-              <span>Notes</span>
+            <button type="button" class="nav-item" data-section="images">
+              <i class="fa-solid fa-image" aria-hidden="true"></i>
+              <span>Images</span>
             </button>
           </li>
           <li>
@@ -93,71 +110,17 @@
               <span>Bookmarks</span>
             </button>
           </li>
-          <li>
-            <button type="button" class="nav-item" data-section="history">
-              <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
-              <span>History</span>
-            </button>
-          </li>
         </ul>
       </nav>
 
-      <!-- ================================================================
-           Main Content — All panel sections
-           ================================================================ -->
+      <!-- Main Content -->
       <main class="sidepanel-main" id="sidepanel-main">
-
-        <!-- Section 3: Dashboard -->
+        <!-- Section 1: AI Chat -->
         <section
           class="panel-section active"
-          id="section-dashboard"
-          data-section="dashboard"
-          aria-labelledby="nav-dashboard"
-        >
-          <div class="section-heading">
-            <h2 class="section-title">Dashboard</h2>
-            <p class="section-desc">Overview of your current PDF and AI status</p>
-          </div>
-
-          <article class="glass-card dashboard-hero">
-            <div class="dashboard-icon">
-              <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
-            </div>
-            <h3 class="dashboard-pdf-name" id="dashboard-pdf-name">Machine Learning Basics.pdf</h3>
-          </article>
-
-          <div class="stats-grid">
-            <div class="stat-card glass-card">
-              <span class="stat-label">Total Pages</span>
-              <span class="stat-value" id="stat-pages">42</span>
-            </div>
-            <div class="stat-card glass-card">
-              <span class="stat-label">File Size</span>
-              <span class="stat-value" id="stat-size">2.4 MB</span>
-            </div>
-          </div>
-
-          <article class="glass-card">
-            <div class="progress-header">
-              <span class="card-label">Reading Progress</span>
-              <span class="progress-percent" id="reading-progress-text">35%</span>
-            </div>
-            <div class="progress-bar" role="progressbar" aria-valuenow="35" aria-valuemin="0" aria-valuemax="100">
-              <div class="progress-fill" id="reading-progress-fill" style="width: 35%"></div>
-            </div>
-            <p class="progress-meta">Page 15 of 42</p>
-          </article>
-
-
-        </section>
-
-        <!-- Section 4: AI Chat -->
-        <section
-          class="panel-section"
           id="section-chat"
           data-section="chat"
           aria-labelledby="nav-chat"
-          hidden
         >
           <div class="section-heading">
             <h2 class="section-title">AI Chat</h2>
@@ -178,24 +141,6 @@
               </div>
               <div class="message-bubble">
                 <p>Hello! I can help you understand this PDF. Ask me anything or try a suggested question below.</p>
-              </div>
-            </div>
-
-            <div class="message message-user">
-              <div class="message-bubble">
-                <p>What is the main topic of this document?</p>
-              </div>
-              <div class="message-avatar user">
-                <i class="fa-solid fa-user" aria-hidden="true"></i>
-              </div>
-            </div>
-
-            <div class="message message-ai">
-              <div class="message-avatar ai">
-                <i class="fa-solid fa-robot" aria-hidden="true"></i>
-              </div>
-              <div class="message-bubble">
-                <p>This document covers foundational machine learning concepts including supervised learning, neural networks, and model evaluation techniques.</p>
               </div>
             </div>
 
@@ -230,7 +175,7 @@
           </div>
         </section>
 
-        <!-- Section 5: PDF Summary -->
+        <!-- Section 2: PDF Summary -->
         <section
           class="panel-section"
           id="section-summary"
@@ -266,43 +211,9 @@
               This PDF introduces core machine learning principles for beginners, covering data preprocessing, model training, and real-world applications across industries.
             </p>
           </article>
-
-          <article class="glass-card summary-block">
-            <h3 class="card-heading">
-              <i class="fa-solid fa-list-ul" aria-hidden="true"></i>
-              <span>Bullet Summary</span>
-              <button type="button" class="btn-icon copy-btn" title="Copy text" data-target="bullet-summary">
-                <i class="fa-solid fa-copy"></i>
-              </button>
-            </h3>
-            <ul class="bullet-list" id="bullet-summary">
-              <li>Defines supervised vs. unsupervised learning</li>
-              <li>Explains neural network architecture basics</li>
-              <li>Covers train/test split and cross-validation</li>
-              <li>Reviews common evaluation metrics (accuracy, F1)</li>
-            </ul>
-          </article>
-
-          <article class="glass-card summary-block">
-            <h3 class="card-heading">
-              <i class="fa-solid fa-book-open" aria-hidden="true"></i>
-              <span>Current Page Summary</span>
-              <button type="button" class="btn-icon copy-btn" title="Copy text" data-target="page-summary">
-                <i class="fa-solid fa-copy"></i>
-              </button>
-            </h3>
-            <p class="card-body" id="page-summary">
-              Page 15 discusses gradient descent optimization and how learning rates affect model convergence during training.
-            </p>
-          </article>
-
-          <button type="button" class="btn btn-secondary btn-block" id="btn-export-summary">
-            <i class="fa-solid fa-file-export" aria-hidden="true"></i>
-            Export Summary
-          </button>
         </section>
 
-        <!-- Section 6: Question & Answer -->
+        <!-- Section 3: Question & Answer -->
         <section
           class="panel-section"
           id="section-qa"
@@ -334,44 +245,28 @@
             <p class="card-body" id="qa-answer-text">
               Gradient descent is an iterative optimization algorithm used to minimize the loss function by adjusting model weights in the direction of steepest descent.
             </p>
-
-            <div class="citation-block">
-              <span class="citation-label">
-                <i class="fa-solid fa-quote-left" aria-hidden="true"></i>
-                Citation
-              </span>
-              <p class="citation-text" id="qa-citation">
-                "Gradient descent updates weights proportionally to the negative gradient of the loss." — Page 15, Paragraph 2
-              </p>
-            </div>
           </article>
         </section>
 
-
-        <!-- Section 8: Notes -->
+        <!-- Section 4: Images & Architecture Diagrams -->
         <section
           class="panel-section"
-          id="section-notes"
-          data-section="notes"
-          aria-labelledby="nav-notes"
+          id="section-images"
+          data-section="images"
+          aria-labelledby="nav-images"
           hidden
         >
           <div class="section-heading">
-            <h2 class="section-title">Notes</h2>
-            <p class="section-desc">Capture insights while reading</p>
+            <h2 class="section-title">Extracted Images &amp; Architecture</h2>
+            <p class="section-desc">Extract, analyze, and explain figures, charts, and architecture diagrams from the PDF</p>
           </div>
 
-          <button type="button" class="btn btn-secondary btn-block" id="btn-add-note">
-            <i class="fa-solid fa-plus" aria-hidden="true"></i>
-            Add Note
-          </button>
-
-          <ul class="notes-list" id="notes-list" aria-label="Notes list">
+          <div class="images-gallery" id="images-gallery" aria-label="Extracted Images" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 1rem;">
             <!-- Populated by JavaScript -->
-          </ul>
+          </div>
         </section>
 
-        <!-- Section 9: Bookmarks -->
+        <!-- Section 5: Bookmarks -->
         <section
           class="panel-section"
           id="section-bookmarks"
@@ -379,52 +274,62 @@
           aria-labelledby="nav-bookmarks"
           hidden
         >
-          <div class="section-heading">
-            <h2 class="section-title">Bookmarks</h2>
-            <p class="section-desc">Quick access to important pages</p>
+          <div class="section-heading" style="display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <h2 class="section-title">Bookmarks</h2>
+              <p class="section-desc">Quick access to important PDF pages</p>
+            </div>
+            <button type="button" class="icon-btn" id="btn-refresh-bookmarks" title="Refresh Bookmarks List" style="width: 32px; height: 32px;">
+              <i class="fa-solid fa-rotate" style="font-size: 13px;"></i>
+            </button>
           </div>
 
-          <button type="button" class="btn btn-primary btn-block" id="btn-bookmark-page">
-            <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
-            Bookmark Current Page
-          </button>
+          <div class="bookmark-toolbar" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center;">
+            <button type="button" class="btn btn-primary btn-block" id="btn-bookmark-page" style="flex: 1; margin-bottom: 0; background: linear-gradient(135deg, var(--color-primary), #3b82f6); border: none;">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i>
+              Add Bookmark
+            </button>
+            <div class="bookmark-sort-wrapper">
+              <select id="bookmark-sort-select" aria-label="Sort Bookmarks" class="text-input" style="padding: 8px 10px; font-size: 12px; height: 38px; border-radius: var(--radius-md); background: rgba(30, 41, 59, 0.8); color: var(--color-text); border: 1px solid var(--color-border); cursor: pointer;">
+                <option value="page-asc">Page (1 → 9)</option>
+                <option value="page-desc">Page (9 → 1)</option>
+                <option value="title">Title (A-Z)</option>
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+              </select>
+            </div>
+          </div>
 
-          <ul class="bookmarks-list" id="bookmarks-list" aria-label="Saved bookmarks">
+          <!-- Search Box -->
+          <div class="bookmark-search-container" style="position: relative; margin-bottom: 12px;">
+            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); font-size: 12px;"></i>
+            <input
+              type="text"
+              id="bookmark-search-input"
+              class="text-input"
+              placeholder="Search bookmarks by title..."
+              style="padding-left: 32px; width: 100%; font-size: 12px; height: 36px; border-radius: var(--radius-md);"
+            />
+          </div>
+
+          <!-- Empty State -->
+          <div id="bookmarks-empty-state" class="empty-state" style="display: none; text-align: center; padding: 32px 16px; background: rgba(30, 41, 59, 0.3); border: 1px dashed var(--color-border); border-radius: var(--radius-lg); margin-top: 12px;">
+            <div style="font-size: 36px; color: var(--color-primary); margin-bottom: 12px;">
+              <i class="fa-solid fa-bookmark"></i>
+            </div>
+            <h3 style="font-size: 15px; font-weight: 600; color: var(--color-text); margin-bottom: 4px;">No bookmarks yet.</h3>
+            <p style="font-size: 12px; color: var(--color-text-muted);">Save important pages to access them quickly.</p>
+          </div>
+
+          <!-- Bookmarks List -->
+          <ul class="bookmarks-list" id="bookmarks-list" aria-label="Saved bookmarks" style="display: flex; flex-direction: column; gap: 8px; padding: 0; margin: 0; list-style: none;">
             <!-- Populated by JavaScript -->
           </ul>
         </section>
-
-        <!-- Section 10: History -->
-        <section
-          class="panel-section"
-          id="section-history"
-          data-section="history"
-          aria-labelledby="nav-history"
-          hidden
-        >
-          <div class="section-heading">
-            <h2 class="section-title">History</h2>
-            <p class="section-desc">Your recent activity</p>
-          </div>
-
-          <h3 class="subsection-title">Recent Chats</h3>
-          <ul class="history-list" id="recent-chats-list" aria-label="Recent chats">
-            <!-- Populated by JavaScript -->
-          </ul>
-
-          <h3 class="subsection-title">Recently Opened PDFs</h3>
-          <ul class="history-list" id="recent-pdfs-list" aria-label="Recently opened PDFs">
-            <!-- Populated by JavaScript -->
-          </ul>
-        </section>
-
       </main>
 
-      <!-- ================================================================
-           Section 11: Footer
-           ================================================================ -->
+      <!-- Footer -->
       <footer class="sidepanel-footer">
-
         <div class="footer-stat">
           <span class="footer-label">Storage</span>
           <span class="footer-value" id="footer-storage">12.4 / 50 MB</span>
@@ -435,9 +340,64 @@
           <span class="footer-value" id="footer-version">v1.0.0</span>
         </div>
       </footer>
-
     </div>
 
+    <!-- Bookmark Add/Edit Modal -->
+    <div id="bookmark-modal-overlay" class="modal-overlay" style="display: none;">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3 id="modal-heading-title" class="modal-title">
+            <i class="fa-solid fa-bookmark" style="color: var(--color-primary);"></i>
+            <span>Add Bookmark</span>
+          </h3>
+          <button type="button" class="btn-icon" id="btn-close-bookmark-modal">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="bookmark-modal-id" value="" />
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="bookmark-modal-title-input" class="form-label" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--color-text-muted);">
+              Bookmark Title <span style="color: #ef4444;">*</span>
+            </label>
+            <input
+              type="text"
+              id="bookmark-modal-title-input"
+              class="text-input"
+              placeholder="e.g. Chapter 2 Summary or Key Diagram"
+              style="width: 100%; height: 38px; font-size: 13px;"
+              required
+            />
+          </div>
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label for="bookmark-modal-page-input" class="form-label" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--color-text-muted);">
+              Page Number <span style="color: #ef4444;">*</span>
+            </label>
+            <input
+              type="number"
+              id="bookmark-modal-page-input"
+              class="text-input"
+              min="1"
+              placeholder="Enter page number (e.g. 5)"
+              style="width: 100%; height: 38px; font-size: 13px;"
+              required
+            />
+          </div>
+        </div>
+        <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end;">
+          <button type="button" class="btn btn-secondary" id="btn-cancel-bookmark-modal" style="padding: 8px 16px;">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btn-save-bookmark-modal" style="padding: 8px 16px; background: var(--color-primary); color: #fff;">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="bookmark-toast" class="toast-notification" style="display: none;">
+      <i class="toast-icon fa-solid fa-circle-check"></i>
+      <span id="toast-message">Bookmark saved!</span>
+    </div>
+
+    <script src="../services/bookmark-service.js"></script>
     <script src="sidepanel.js"></script>
   </body>
 </html>

@@ -28,9 +28,7 @@
   <body>
     <div class="popup" role="application" aria-label="AI PDF Assistant">
 
-      <!-- ============================================================
-           Section 1: Header
-           ============================================================ -->
+      <!-- Header -->
       <header class="popup-header">
         <div class="header-brand">
           <div class="logo" aria-hidden="true">
@@ -42,37 +40,54 @@
           </div>
         </div>
 
-        <button
-          type="button"
-          class="icon-btn settings-btn"
-          id="btn-settings"
-          aria-label="Open settings"
-          title="Settings"
-        >
-          <i class="fa-solid fa-gear"></i>
-        </button>
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <button
+            type="button"
+            class="icon-btn"
+            id="btn-refresh-popup"
+            aria-label="Refresh Popup & Sidepanel"
+            title="Refresh"
+            style="width: 28px; height: 28px;"
+          >
+            <i class="fa-solid fa-rotate" style="font-size: 13px;"></i>
+          </button>
+          <button
+            type="button"
+            class="icon-btn"
+            id="btn-popup-all-bookmarks"
+            aria-label="All Bookmarks List"
+            title="All Bookmarks List"
+            style="width: 28px; height: 28px; color: #ec4899;"
+          >
+            <i class="fa-solid fa-bookmark" style="font-size: 13px;"></i>
+          </button>
+          <button
+            type="button"
+            class="icon-btn settings-btn"
+            id="btn-settings"
+            aria-label="Open settings"
+            title="Settings"
+            style="width: 28px; height: 28px;"
+          >
+            <i class="fa-solid fa-gear" style="font-size: 13px;"></i>
+          </button>
+        </div>
       </header>
 
       <!-- Scrollable main content -->
       <main class="popup-main">
 
-        <!-- ============================================================
-             Section 2: PDF Actions
-             ============================================================ -->
+        <!-- PDF Actions -->
         <section class="section" aria-labelledby="pdf-actions-title">
           <h2 class="section-title" id="pdf-actions-title">PDF Actions</h2>
 
           <button type="button" class="btn btn-primary btn-block" id="btn-extract-pdf" style="background-color: #10a37f; border-color: #10a37f;">
             <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
-            <span>Extract Text from PDF</span>
+            <span>Extract Text &amp; Images from PDF</span>
           </button>
-
-
         </section>
 
-        <!-- ============================================================
-             Section 3: Quick Actions
-             ============================================================ -->
+        <!-- Quick Actions -->
         <section class="section" aria-labelledby="quick-actions-title">
           <h2 class="section-title" id="quick-actions-title">Quick Actions</h2>
 
@@ -114,9 +129,70 @@
           </div>
         </section>
 
-        <!-- ============================================================
-             Section 3.5: Extracted Text
-             ============================================================ -->
+        <!-- Popup Add Bookmark Form -->
+        <section class="section" id="popup-bookmark-section" style="display: none; background: var(--color-card); border: 1px solid var(--color-border); border-radius: 8px; padding: 12px; margin-top: 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <h2 class="section-title" style="margin: 0; font-size: 13px; display: flex; align-items: center; gap: 6px; color: var(--color-text);">
+              <i class="fa-solid fa-bookmark" style="color: #ec4899;"></i>
+              <span>Add PDF Bookmark</span>
+            </h2>
+            <button type="button" class="btn-icon" id="btn-close-popup-bookmark" style="width: 20px; height: 20px; color: var(--color-text-muted); background: none; border: none; cursor: pointer;">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+
+          <!-- Input 1: Page Number -->
+          <div style="margin-bottom: 8px;">
+            <label for="popup-bookmark-page-input" style="display: block; font-size: 11px; color: var(--color-text-muted); margin-bottom: 4px; font-weight: 600;">
+              Page Number <span style="color: #ef4444;">*</span>
+            </label>
+            <input
+              type="number"
+              id="popup-bookmark-page-input"
+              min="1"
+              placeholder="e.g. 5"
+              style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text); font-size: 12px; box-sizing: border-box;"
+              required
+            />
+          </div>
+
+          <!-- Input 2: Bookmark Title -->
+          <div style="margin-bottom: 12px;">
+            <label for="popup-bookmark-title-input" style="display: block; font-size: 11px; color: var(--color-text-muted); margin-bottom: 4px; font-weight: 600;">
+              Bookmark Title <span style="color: #ef4444;">*</span>
+            </label>
+            <input
+              type="text"
+              id="popup-bookmark-title-input"
+              placeholder="e.g. Chapter 3 Summary"
+              style="width: 100%; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--color-border); background: var(--color-bg); color: var(--color-text); font-size: 12px; box-sizing: border-box;"
+              required
+            />
+          </div>
+
+          <div style="display: flex; gap: 8px; justify-content: flex-end;">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-popup-bookmark" style="padding: 4px 10px; font-size: 11px;">Cancel</button>
+            <button type="button" class="btn btn-primary" id="btn-save-popup-bookmark" style="padding: 4px 12px; font-size: 11px; background: #ec4899; border-color: #ec4899; color: #fff;">Save Bookmark</button>
+          </div>
+        </section>
+
+        <!-- Popup Bookmarks List Section -->
+        <section class="section" id="popup-bookmarks-list-section" style="display: none; background: var(--color-card); border: 1px solid var(--color-border); border-radius: 8px; padding: 12px; margin-top: 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+            <h2 class="section-title" style="margin: 0; font-size: 13px; display: flex; align-items: center; gap: 6px; color: var(--color-text);">
+              <i class="fa-solid fa-list-ul" style="color: #ec4899;"></i>
+              <span>Saved Bookmarks</span>
+            </h2>
+            <button type="button" class="btn-icon" id="btn-close-popup-bookmarks-list" style="width: 20px; height: 20px; color: var(--color-text-muted); background: none; border: none; cursor: pointer;">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+          <ul id="popup-bookmarks-list" style="display: flex; flex-direction: column; gap: 8px; padding: 0; margin: 0; list-style: none; max-height: 200px; overflow-y: auto;">
+            <!-- Bookmarks populated by JS -->
+          </ul>
+        </section>
+
+        <!-- Extracted Text -->
         <section class="section" aria-labelledby="extracted-text-title" style="display: none;" id="extracted-text-section">
           <div class="section-header-row" style="margin-bottom: 8px;">
             <h2 class="section-title" id="extracted-text-title" style="margin: 0;">Extracted Text</h2>
@@ -129,9 +205,17 @@
           </div>
         </section>
 
-        <!-- ============================================================
-             Section 3.6: AI Response
-             ============================================================ -->
+        <!-- Extracted Images -->
+        <section class="section" aria-labelledby="extracted-images-title" style="display: none;" id="extracted-images-section">
+          <div class="section-header-row" style="margin-bottom: 8px;">
+            <h2 class="section-title" id="extracted-images-title" style="margin: 0;">Extracted Images &amp; Architecture</h2>
+          </div>
+          <div id="popup-images-gallery" style="display: flex; flex-direction: column; gap: 12px; width: 100%; max-height: 280px; overflow-y: auto; background: var(--color-card); border: 1px solid var(--color-border); border-radius: 6px; padding: 12px;">
+            <!-- Images populated by JS -->
+          </div>
+        </section>
+
+        <!-- AI Response -->
         <section class="section" aria-labelledby="ai-response-title" style="display: none;" id="ai-response-section">
           <h2 class="section-title" id="ai-response-title">AI Response</h2>
           
@@ -145,15 +229,9 @@
           </div>
         </section>
 
-
-
-
-
       </main>
 
-      <!-- ============================================================
-           Section 6: Footer
-           ============================================================ -->
+      <!-- Footer -->
       <footer class="popup-footer">
         <span class="footer-version" id="footer-version">v1.0.0</span>
 
@@ -165,6 +243,7 @@
 
     </div>
 
+    <script src="../services/bookmark-service.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

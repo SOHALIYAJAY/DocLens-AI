@@ -104,6 +104,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
             extracted_text = final_text.strip()
             extracted_pages = [{"page": 1, "text": extracted_text}]
             print("OCR Extraction complete.")
+
                     
         return extracted_pages
     except Exception as e:

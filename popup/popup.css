@@ -579,3 +579,13 @@ ul {
 .footer-link-btn i {
   font-size: 12px;
 }
+
+.fa-rotate.spinning {
+  animation: spin 0.6s linear infinite !important;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
+}

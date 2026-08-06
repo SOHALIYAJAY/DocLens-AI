@@ -69,7 +69,7 @@ const RECENT_PDFS = [
 ];
 
 /** Currently visible panel section ID */
-let activeSection = "dashboard";
+let activeSection = "chat";
 
 /* ==========================================================================
    Utility Helpers
@@ -229,44 +229,319 @@ function renderNotes() {
   });
 }
 
-/** Renders saved bookmarks from storage dynamically. */
-function renderBookmarks() {
-  const list = document.getElementById("bookmarks-list");
+/* ==========================================================================
+   Bookmark Helpers & Rendering
+   ========================================================================== */
 
-  if (!list) {
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function formatDate(isoString) {
+  if (!isoString) return "";
+  try {
+    const d = new Date(isoString);
+    return d.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch (e) {
+    return isoString;
+  }
+}
+
+function showToast(message, isError = false) {
+  const toast = document.getElementById("bookmark-toast");
+  const msgEl = document.getElementById("toast-message");
+  if (!toast || !msgEl) return;
+
+  msgEl.textContent = message;
+  toast.classList.toggle("error", isError);
+  toast.style.display = "flex";
+
+  if (toast._timer) clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    toast.style.display = "none";
+  }, 3000);
+}
+
+let currentModalMode = "add";
+
+function openBookmarkModal(mode = "add", data = {}) {
+  const overlay = document.getElementById("bookmark-modal-overlay");
+  const headingTitle = document.getElementById("modal-heading-title");
+  const titleInput = document.getElementById("bookmark-modal-title-input");
+  const pageInput = document.getElementById("bookmark-modal-page-input");
+  const idInput = document.getElementById("bookmark-modal-id");
+
+  if (!overlay || !titleInput || !pageInput) return;
+
+  currentModalMode = mode;
+  idInput.value = data.id || "";
+  pageInput.value = data.pageNumber || 1;
+  titleInput.value = data.title || `Bookmark - Page ${data.pageNumber || 1}`;
+
+  if (headingTitle) {
+    const titleSpan = headingTitle.querySelector("span");
+    if (titleSpan) titleSpan.textContent = mode === "edit" ? "Edit Bookmark Title" : "Add Bookmark";
+  }
+
+  overlay.style.display = "flex";
+  setTimeout(() => {
+    titleInput.focus();
+    titleInput.select();
+  }, 50);
+}
+
+function closeBookmarkModal() {
+  const overlay = document.getElementById("bookmark-modal-overlay");
+  if (overlay) overlay.style.display = "none";
+}
+
+async function handleSaveBookmarkModal() {
+  const titleInput = document.getElementById("bookmark-modal-title-input");
+  const pageInput = document.getElementById("bookmark-modal-page-input");
+  const idInput = document.getElementById("bookmark-modal-id");
+
+  const title = titleInput ? titleInput.value.trim() : "";
+  const pageNumber = pageInput ? parseInt(pageInput.value, 10) : 1;
+  const bookmarkId = idInput ? idInput.value : "";
+
+  if (!title) {
+    showToast("Please enter a bookmark title.", true);
+    return;
+  }
+  if (isNaN(pageNumber) || pageNumber < 1) {
+    showToast("Please enter a valid page number.", true);
     return;
   }
 
-  chrome.runtime.sendMessage({ action: "GET_BOOKMARKS" }, (response) => {
-    list.innerHTML = "";
-    
-    if (chrome.runtime.lastError || !response || !response.success || !response.data) {
-      logAction("Failed to fetch bookmarks", chrome.runtime.lastError);
-      return;
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const activeTab = tabs[0];
+    const pdfId = activeTab ? activeTab.url : "unknown-pdf";
+
+    if (currentModalMode === "edit") {
+      if (typeof BookmarkService !== "undefined") {
+        await BookmarkService.updateBookmark(bookmarkId, title);
+      } else {
+        await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage({
+            action: "UPDATE_BOOKMARK",
+            payload: { bookmarkId, title }
+          }, (res) => {
+            if (chrome.runtime.lastError || !res || res.success === false) {
+              reject(new Error(chrome.runtime.lastError?.message || res?.error || "Failed to update"));
+            } else {
+              resolve(res);
+            }
+          });
+        });
+      }
+      showToast("Bookmark updated successfully!");
+    } else {
+      if (typeof BookmarkService !== "undefined") {
+        await BookmarkService.addBookmark({ pdfId, title, pageNumber });
+      } else {
+        await new Promise((resolve, reject) => {
+          chrome.runtime.sendMessage({
+            action: "SAVE_BOOKMARK",
+            payload: { pdfId, title, pageNumber }
+          }, (res) => {
+            if (chrome.runtime.lastError || !res || res.success === false) {
+              reject(new Error(chrome.runtime.lastError?.message || res?.error || "Failed to save"));
+            } else {
+              resolve(res);
+            }
+          });
+        });
+      }
+      showToast("Bookmark saved successfully!");
     }
 
-    const bookmarks = response.data;
-    
-    if (bookmarks.length === 0) {
-      list.innerHTML = '<li class="list-item-card"><div class="list-item-content"><span class="list-item-title">No bookmarks yet</span></div></li>';
-      return;
+    closeBookmarkModal();
+    renderBookmarks();
+  } catch (err) {
+    showToast(err.message || "Failed to save bookmark", true);
+  }
+}
+
+async function jumpToBookmarkPage(bookmark) {
+  logAction("Navigating to bookmark", bookmark);
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const activeTab = tabs[0];
+    if (activeTab) {
+      chrome.tabs.sendMessage(activeTab.id, {
+        action: "NAVIGATE_TO_PAGE",
+        pageNumber: bookmark.pageNumber
+      }, () => {
+        if (chrome.runtime.lastError) {
+          logAction("Fallback URL hash navigation", chrome.runtime.lastError);
+        }
+      });
+
+      if (bookmark.pdfId) {
+        let cleanUrl = bookmark.pdfId.split("#")[0];
+        const newUrl = `${cleanUrl}#page=${bookmark.pageNumber}`;
+        if (activeTab.url !== newUrl) {
+          chrome.tabs.update(activeTab.id, { url: newUrl });
+        }
+      }
+    }
+  } catch (err) {
+    logAction("Failed to jump to bookmark page", err);
+  }
+}
+
+async function handleBookmarkPage() {
+  logAction("Add Bookmark button clicked");
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    const activeTab = tabs[0];
+    let pageNumber = 1;
+    let title = "PDF Bookmark";
+
+    if (activeTab) {
+      try {
+        const response = await chrome.tabs.sendMessage(activeTab.id, { action: "GET_PAGE_INFO" });
+        if (response && response.success && response.data) {
+          pageNumber = response.data.pageNumber || 1;
+          title = `Page ${pageNumber} Notes`;
+        }
+      } catch (_) {
+        if (activeTab.title) {
+          title = `${activeTab.title} - Page ${pageNumber}`;
+        }
+      }
     }
 
-    bookmarks.forEach((bookmark) => {
-      list.appendChild(
-        createListItemCard({
-          iconClass: "fa-bookmark",
-          iconType: "bookmark",
-          title: bookmark.title,
-          meta: `Page ${bookmark.pageNumber}`,
-          actionLabel: `Go to bookmark: ${bookmark.title}`,
-          onAction: () => {
-            logAction("Bookmark opened", bookmark);
-            showAlert(`Jump to Page ${bookmark.pageNumber}: "${bookmark.title}"\n(Jumping not implemented yet.)`);
-          },
-        })
-      );
+    openBookmarkModal("add", { title, pageNumber });
+  } catch (err) {
+    showToast(err.message || "Failed to open bookmark modal", true);
+  }
+}
+
+/** Renders saved bookmarks from storage dynamically. */
+async function renderBookmarks() {
+  const list = document.getElementById("bookmarks-list");
+  const emptyState = document.getElementById("bookmarks-empty-state");
+  const searchInput = document.getElementById("bookmark-search-input");
+  const sortSelect = document.getElementById("bookmark-sort-select");
+
+  if (!list) return;
+
+  const searchQuery = searchInput ? searchInput.value.trim() : "";
+  const sortBy = sortSelect ? sortSelect.value : "page-asc";
+
+  let activeTabUrl = null;
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs[0]) activeTabUrl = tabs[0].url;
+  } catch (_) {}
+
+  let bookmarks = [];
+  try {
+    if (typeof BookmarkService !== "undefined") {
+      bookmarks = await BookmarkService.searchBookmarks(activeTabUrl, searchQuery, sortBy);
+    } else {
+      bookmarks = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({
+          action: "SEARCH_BOOKMARKS",
+          payload: { pdfId: activeTabUrl, query: searchQuery, sortBy }
+        }, (res) => {
+          if (res && res.success && res.data) resolve(res.data);
+          else resolve([]);
+        });
+      });
+    }
+  } catch (e) {
+    logAction("Error searching bookmarks", e);
+  }
+
+  list.innerHTML = "";
+
+  if (!bookmarks || bookmarks.length === 0) {
+    if (emptyState) emptyState.style.display = "block";
+    list.style.display = "none";
+    return;
+  }
+
+  if (emptyState) emptyState.style.display = "none";
+  list.style.display = "flex";
+
+  bookmarks.forEach((bookmark) => {
+    const card = document.createElement("li");
+    card.className = "bookmark-card";
+    card.innerHTML = `
+      <div class="bookmark-card-left">
+        <div class="bookmark-icon-badge">
+          <i class="fa-solid fa-bookmark"></i>
+        </div>
+        <div class="bookmark-info">
+          <span class="bookmark-title">${escapeHtml(bookmark.title)}</span>
+          <div class="bookmark-meta-row">
+            <span class="bookmark-page-badge">Page ${bookmark.pageNumber}</span>
+            <span>·</span>
+            <span>${formatDate(bookmark.timestamp)}</span>
+          </div>
+        </div>
+      </div>
+      <div class="bookmark-actions">
+        <button type="button" class="action-btn-sm btn-jump" title="Jump to Page">
+          <i class="fa-solid fa-arrow-up-right-from-square"></i>
+        </button>
+        <button type="button" class="action-btn-sm btn-edit" title="Edit Title">
+          <i class="fa-solid fa-pen"></i>
+        </button>
+        <button type="button" class="action-btn-sm delete btn-delete" title="Delete Bookmark">
+          <i class="fa-solid fa-trash"></i>
+        </button>
+      </div>
+    `;
+
+    const jumpAction = () => jumpToBookmarkPage(bookmark);
+    card.querySelector(".bookmark-card-left").addEventListener("click", jumpAction);
+    card.querySelector(".btn-jump").addEventListener("click", (e) => {
+      e.stopPropagation();
+      jumpAction();
     });
+
+    card.querySelector(".btn-edit").addEventListener("click", (e) => {
+      e.stopPropagation();
+      openBookmarkModal("edit", bookmark);
+    });
+
+    card.querySelector(".btn-delete").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        if (typeof BookmarkService !== "undefined") {
+          await BookmarkService.deleteBookmark(bookmark.id);
+        } else {
+          await new Promise((resolve) => {
+            chrome.runtime.sendMessage({
+              action: "DELETE_BOOKMARK",
+              payload: { bookmarkId: bookmark.id }
+            }, resolve);
+          });
+        }
+        showToast("Bookmark deleted");
+        renderBookmarks();
+      } catch (err) {
+        showToast(err.message || "Failed to delete bookmark", true);
+      }
+    });
+
+    list.appendChild(card);
   });
 }
 
@@ -488,6 +763,104 @@ function handleBookmarkPage() {
   });
 }
 
+/**
+ * Renders automatically extracted images.
+ */
+function renderExtractedImages(images) {
+  const gallery = document.getElementById("images-gallery");
+  if (!gallery) return;
+
+  gallery.innerHTML = "";
+  
+  if (!images || images.length === 0) {
+    gallery.innerHTML = '<div class="alert info">No images found in this PDF.</div>';
+    return;
+  }
+  
+  images.forEach(img => {
+    const card = document.createElement("div");
+    card.className = "image-card";
+    card.style = "border: 1px solid var(--border-color); border-radius: var(--border-radius); padding: 0.5rem; background: var(--surface-color);";
+    
+    const imgEl = document.createElement("img");
+    // Fetch image from the backend via the GET endpoint
+    imgEl.src = `http://127.0.0.1:8000/image/${img.image_id}`;
+    imgEl.style = "max-width: 100%; height: auto; border-radius: var(--border-radius);";
+    
+    const meta = document.createElement("div");
+    meta.style = "display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; font-size: var(--text-xs); color: var(--text-secondary);";
+    meta.innerHTML = `<span>Page ${img.page}</span>`;
+    
+    const explainBtn = document.createElement("button");
+    explainBtn.className = "btn btn-secondary";
+    explainBtn.style = "padding: 0.25rem 0.5rem; font-size: var(--text-xs);";
+    explainBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Explain Image';
+    
+    const explanationContainer = document.createElement("div");
+    explanationContainer.style = "margin-top: 0.5rem; font-size: var(--text-sm); display: none; background: var(--background-color); padding: 0.5rem; border-radius: var(--border-radius); border: 1px solid var(--border-color);";
+    
+    explainBtn.addEventListener("click", () => {
+      explainBtn.disabled = true;
+      explainBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+      explanationContainer.style.display = "block";
+      explanationContainer.innerHTML = '<em>Analyzing image...</em>';
+      
+      chrome.runtime.sendMessage({ 
+        action: "EXPLAIN_IMAGE", 
+        payload: { image_id: img.image_id }
+      }, (explainRes) => {
+        explainBtn.disabled = false;
+        explainBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Explain Image';
+        
+        if (chrome.runtime.lastError || !explainRes || !explainRes.success) {
+          explanationContainer.innerHTML = '<span style="color:var(--danger-color)">Failed to analyze image.</span>';
+          return;
+        }
+        
+        const result = explainRes.data || explainRes;
+        
+        let componentsHtml = "";
+        if (result.important_components && result.important_components.length > 0) {
+            componentsHtml = `<strong>Important Components:</strong><ul>` + result.important_components.map(c => `<li>${c}</li>`).join("") + `</ul>`;
+        }
+        
+        let relationshipsHtml = "";
+        if (result.relationships && result.relationships.length > 0) {
+            relationshipsHtml = `<strong>Relationships:</strong><ul>` + result.relationships.map(r => `<li>${r}</li>`).join("") + `</ul>`;
+        }
+        
+        let takeawaysHtml = "";
+        if (result.key_takeaways && result.key_takeaways.length > 0) {
+            takeawaysHtml = `<strong>Key Takeaways:</strong><ul>` + result.key_takeaways.map(k => `<li>${k}</li>`).join("") + `</ul>`;
+        }
+        
+        let applicationHtml = "";
+        if (result.real_world_application) {
+            applicationHtml = `<strong>Real-World Application:</strong><br/>${result.real_world_application}`;
+        }
+        
+        explanationContainer.innerHTML = `
+          <strong>${result.title}</strong><br/>
+          <em>${result.summary}</em><br/>
+          <p style="margin-top:0.5rem">${result.explanation}</p>
+          <div style="margin-top:0.5rem; border-top: 1px solid var(--border-color); padding-top: 0.5rem;">
+            ${componentsHtml}
+            ${relationshipsHtml}
+            ${takeawaysHtml}
+            ${applicationHtml}
+          </div>
+        `;
+      });
+    });
+    
+    meta.appendChild(explainBtn);
+    card.appendChild(imgEl);
+    card.appendChild(meta);
+    card.appendChild(explanationContainer);
+    gallery.appendChild(card);
+  });
+}
+
 /* ==========================================================================
    Event Binding
    ========================================================================== */
@@ -531,15 +904,91 @@ function bindEventListeners() {
   });
 
 
-  // Notes & Bookmarks
-  document.getElementById("btn-add-note")?.addEventListener("click", handleAddNote);
-  document.getElementById("btn-bookmark-page")?.addEventListener("click", handleBookmarkPage);
+async function handleRefreshSidebar(btnId = "btn-refresh-sidebar") {
+  const btn = document.getElementById(btnId);
+  const icon = btn ? btn.querySelector("i") : null;
 
-  // Dummy testing listener
+  if (icon) icon.classList.add("spinning");
+
+  logAction("Sidebar refresh triggered");
+
+  try {
+    await new Promise((resolve) => {
+      chrome.storage.local.remove(["lastExtractedText", "lastExtractedImages"], () => {
+        resolve();
+      });
+    });
+    await renderBookmarks();
+    showToast("Workspace refreshed!");
+    setTimeout(() => {
+      window.location.reload();
+    }, 600);
+  } catch (err) {
+    logAction("Refresh failed", err);
+  } finally {
+    setTimeout(() => {
+      if (icon) icon.classList.remove("spinning");
+    }, 600);
+  }
+}
+
+  // Bookmarks
+  document.getElementById("btn-refresh-sidebar")?.addEventListener("click", () => handleRefreshSidebar("btn-refresh-sidebar"));
+  document.getElementById("btn-refresh-bookmarks")?.addEventListener("click", () => handleRefreshSidebar("btn-refresh-bookmarks"));
+  document.getElementById("btn-quick-bookmarks")?.addEventListener("click", handleBookmarkPage);
+  document.getElementById("btn-bookmark-page")?.addEventListener("click", handleBookmarkPage);
+  document.getElementById("bookmark-search-input")?.addEventListener("input", () => renderBookmarks());
+  document.getElementById("bookmark-sort-select")?.addEventListener("change", () => renderBookmarks());
+  document.getElementById("btn-close-bookmark-modal")?.addEventListener("click", closeBookmarkModal);
+  document.getElementById("btn-cancel-bookmark-modal")?.addEventListener("click", closeBookmarkModal);
+  document.getElementById("btn-save-bookmark-modal")?.addEventListener("click", handleSaveBookmarkModal);
+  document.getElementById("bookmark-modal-overlay")?.addEventListener("click", (e) => {
+    if (e.target.id === "bookmark-modal-overlay") closeBookmarkModal();
+  });
+
+  // Extract Text from PDF
+  document.getElementById("btn-extract-pdf")?.addEventListener("click", () => {
+    logAction("Extract PDF clicked");
+    const btn = document.getElementById("btn-extract-pdf");
+    if (btn) btn.disabled = true;
+    
+    const statusArea = document.getElementById("extraction-status-area");
+    if (statusArea) {
+      statusArea.style.display = "block";
+      statusArea.style.borderColor = "var(--color-primary)";
+      statusArea.style.background = "rgba(6, 182, 212, 0.1)";
+      statusArea.innerHTML = "<em>Extracting text and images... please wait.</em>";
+    }
+    
+    chrome.runtime.sendMessage({ action: "EXTRACT_PDF_TEXT" });
+  });
+  
+  // Dummy testing listener and extraction result listener
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "FORWARD_TEST_CONNECTION") {
       logAction("TEST MESSAGE RECEIVED", { source: message.source, data: message.data });
       showAlert(`Test message from ${message.source}: ${message.data}`);
+    } else if (message.action === "EXTRACTED_TEXT_RESULT") {
+      const statusArea = document.getElementById("extraction-status-area");
+      const btn = document.getElementById("btn-extract-pdf");
+      if (btn) btn.disabled = false;
+      if (statusArea) {
+        if (message.success) {
+          statusArea.style.display = "block";
+          statusArea.style.borderColor = "var(--color-success)";
+          statusArea.style.background = "rgba(34, 197, 94, 0.1)";
+          statusArea.textContent = message.text;
+          
+          if (message.images) {
+            renderExtractedImages(message.images);
+          }
+        } else {
+          statusArea.style.display = "block";
+          statusArea.style.borderColor = "#ef4444";
+          statusArea.style.background = "rgba(239, 68, 68, 0.1)";
+          statusArea.textContent = "Error: " + message.error;
+        }
+      }
     }
   });
 }
@@ -555,13 +1004,11 @@ function initSidePanel() {
   initNavigation();
   renderSuggestedQuestions();
 
-  renderNotes();
   renderBookmarks();
-  renderHistory();
   bindEventListeners();
 
-  // Ensure only Dashboard is visible on load
-  navigateToSection("dashboard");
+  // Ensure only Chat is visible on load
+  navigateToSection("chat");
 
   logAction("Side panel initialized");
 }

@@ -142,6 +142,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: true, text: selectedText });
       break;
 
+    case "NAVIGATE_TO_PAGE":
+      if (request.pageNumber) {
+        navigateToPage(request.pageNumber);
+      }
+      sendResponse({ success: true });
+      break;
+
+    case "OPEN_BOOKMARK_MODAL":
+      openInPageBookmarkModal();
+      sendResponse({ success: true });
+      break;
+
     default:
       logMessage(`Unknown action received: ${request.action}`);
       sendResponse({ success: false, error: "Unknown action" });
@@ -406,6 +418,310 @@ function injectResumeUI(progress) {
 }
 
 /* ==========================================================================
+   In-Page PDF Bookmark Toolbar & Modal
+   ========================================================================== */
+
+/**
+ * Injects a sleek floating Toolbar onto PDF pages with "Bookmark Page" and "View Bookmarks" buttons.
+ */
+function injectPdfToolbarButton() {
+  if (document.getElementById("pdf-assistant-floating-toolbar")) return;
+
+  const toolbar = document.createElement("div");
+  toolbar.id = "pdf-assistant-floating-toolbar";
+  Object.assign(toolbar.style, {
+    position: "fixed",
+    top: "20px",
+    right: "20px",
+    zIndex: "999999",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    fontFamily: "Inter, sans-serif"
+  });
+
+  // 1. Bookmark Page Button
+  const btnBookmark = document.createElement("button");
+  btnBookmark.id = "pdf-assistant-bookmark-btn";
+  btnBookmark.innerHTML = `
+    <span style="font-size: 15px;">🔖</span>
+    <span style="font-weight: 600; font-size: 13px;">Bookmark</span>
+  `;
+  Object.assign(btnBookmark.style, {
+    background: "rgba(15, 23, 42, 0.92)",
+    color: "#ffffff",
+    border: "1px solid rgba(255, 255, 255, 0.15)",
+    backdropFilter: "blur(8px)",
+    borderRadius: "24px",
+    padding: "8px 16px",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    cursor: "pointer",
+    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
+    transition: "all 0.2s ease"
+  });
+
+  btnBookmark.addEventListener("mouseenter", () => {
+    btnBookmark.style.transform = "translateY(-2px) scale(1.03)";
+    btnBookmark.style.borderColor = "#06b6d4";
+    btnBookmark.style.boxShadow = "0 12px 28px rgba(6, 182, 212, 0.3)";
+  });
+  btnBookmark.addEventListener("mouseleave", () => {
+    btnBookmark.style.transform = "none";
+    btnBookmark.style.borderColor = "rgba(255, 255, 255, 0.15)";
+    btnBookmark.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.35)";
+  });
+  btnBookmark.addEventListener("click", () => {
+    openInPageBookmarkModal();
+  });
+
+  // 2. View Bookmarks List Button
+  const btnViewList = document.createElement("button");
+  btnViewList.id = "pdf-assistant-view-bookmarks-btn";
+  btnViewList.innerHTML = `
+    <span style="font-size: 15px;">📚</span>
+    <span style="font-weight: 600; font-size: 13px;">Stored Bookmarks</span>
+  `;
+  Object.assign(btnViewList.style, {
+    background: "rgba(15, 23, 42, 0.92)",
+    color: "#ec4899",
+    border: "1px solid rgba(236, 72, 153, 0.3)",
+    backdropFilter: "blur(8px)",
+    borderRadius: "24px",
+    padding: "8px 16px",
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    cursor: "pointer",
+    boxShadow: "0 8px 24px rgba(0, 0, 0, 0.35)",
+    transition: "all 0.2s ease"
+  });
+
+  btnViewList.addEventListener("mouseenter", () => {
+    btnViewList.style.transform = "translateY(-2px) scale(1.03)";
+    btnViewList.style.borderColor = "#ec4899";
+    btnViewList.style.boxShadow = "0 12px 28px rgba(236, 72, 153, 0.3)";
+  });
+  btnViewList.addEventListener("mouseleave", () => {
+    btnViewList.style.transform = "none";
+    btnViewList.style.borderColor = "rgba(236, 72, 153, 0.3)";
+    btnViewList.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.35)";
+  });
+  btnViewList.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ action: "OPEN_SIDE_PANEL" });
+  });
+
+  toolbar.appendChild(btnBookmark);
+  toolbar.appendChild(btnViewList);
+  document.body.appendChild(toolbar);
+}
+
+/**
+ * Shows an in-page toast notification.
+ */
+function showInPageToast(message, isError = false) {
+  let toast = document.getElementById("pdf-assistant-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "pdf-assistant-toast";
+    Object.assign(toast.style, {
+      position: "fixed",
+      bottom: "24px",
+      right: "24px",
+      zIndex: "1000001",
+      color: "#ffffff",
+      padding: "12px 20px",
+      borderRadius: "10px",
+      fontSize: "13px",
+      fontWeight: "600",
+      fontFamily: "Inter, sans-serif",
+      boxShadow: "0 10px 25px rgba(0, 0, 0, 0.4)",
+      transition: "all 0.3s ease",
+      display: "flex",
+      alignItems: "center",
+      gap: "10px"
+    });
+    document.body.appendChild(toast);
+  }
+
+  toast.style.background = isError ? "rgba(239, 68, 68, 0.95)" : "rgba(16, 185, 129, 0.95)";
+  toast.innerHTML = `${isError ? '⚠️' : '✅'} <span>${message}</span>`;
+  toast.style.display = "flex";
+  toast.style.opacity = "1";
+
+  if (toast._timer) clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => {
+    toast.style.opacity = "0";
+    setTimeout(() => { toast.style.display = "none"; }, 300);
+  }, 3000);
+}
+
+/**
+ * Opens the in-page Bookmark creation modal.
+ */
+function openInPageBookmarkModal() {
+  const pageInfo = getPageInfo();
+  let overlay = document.getElementById("pdf-assistant-modal-overlay");
+
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "pdf-assistant-modal-overlay";
+    Object.assign(overlay.style, {
+      position: "fixed",
+      top: "0",
+      left: "0",
+      width: "100vw",
+      height: "100vh",
+      background: "rgba(0, 0, 0, 0.75)",
+      backdropFilter: "blur(4px)",
+      zIndex: "1000000",
+      display: "flex",
+      alignItems: "center",
+      justify-content: "center",
+      fontFamily: "Inter, sans-serif"
+    });
+
+    overlay.innerHTML = `
+      <div style="width: 100%; max-width: 380px; background: #18181b; border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 20px; box-shadow: 0 20px 40px rgba(0,0,0,0.5); color: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <h3 style="font-size: 16px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px;">
+            <span>🔖</span> Add PDF Bookmark
+          </h3>
+          <button id="pdf-assistant-close-modal" style="background: none; border: none; color: #94a3b8; font-size: 20px; cursor: pointer;">&times;</button>
+        </div>
+        <div style="margin-bottom: 14px;">
+          <label style="display: block; font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Bookmark Title <span style="color: #ef4444;">*</span></label>
+          <input type="text" id="pdf-assistant-modal-title" placeholder="e.g. Chapter 1 Summary" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: #27272a; color: #fff; font-size: 13px; box-sizing: border-box;" required />
+        </div>
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; font-size: 12px; font-weight: 600; color: #94a3b8; margin-bottom: 6px;">Page Number <span style="color: #ef4444;">*</span></label>
+          <input type="number" id="pdf-assistant-modal-page" min="1" placeholder="Enter page number" style="width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: #27272a; color: #fff; font-size: 13px; box-sizing: border-box;" required />
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+          <button id="pdf-assistant-cancel-modal" style="padding: 8px 16px; border-radius: 8px; background: rgba(255,255,255,0.1); border: none; color: #fff; font-weight: 600; cursor: pointer;">Cancel</button>
+          <button id="pdf-assistant-save-modal" style="padding: 8px 16px; border-radius: 8px; background: #06b6d4; border: none; color: #fff; font-weight: 600; cursor: pointer;">Save Bookmark</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    document.getElementById("pdf-assistant-close-modal").addEventListener("click", () => {
+      overlay.style.display = "none";
+    });
+    document.getElementById("pdf-assistant-cancel-modal").addEventListener("click", () => {
+      overlay.style.display = "none";
+    });
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) overlay.style.display = "none";
+    });
+
+    document.getElementById("pdf-assistant-save-modal").addEventListener("click", async () => {
+      const titleInput = document.getElementById("pdf-assistant-modal-title");
+      const pageInput = document.getElementById("pdf-assistant-modal-page");
+      
+      const title = titleInput ? titleInput.value.trim() : "";
+      const pageNumber = pageInput ? parseInt(pageInput.value, 10) : pageInfo.pageNumber;
+
+      if (!title) {
+        showInPageToast("Bookmark title is required", true);
+        return;
+      }
+      if (isNaN(pageNumber) || pageNumber < 1) {
+        showInPageToast("Please enter a valid page number", true);
+        return;
+      }
+
+      chrome.runtime.sendMessage({
+        action: "SAVE_BOOKMARK",
+        payload: {
+          pdfId: pageInfo.url,
+          title,
+          pageNumber
+        }
+      }, (response) => {
+        if (chrome.runtime.lastError || (response && response.success === false)) {
+          const err = chrome.runtime.lastError?.message || response?.error || "Error saving bookmark";
+          showInPageToast(err, true);
+        } else {
+          showInPageToast(`Bookmark "${title}" (Page ${pageNumber}) saved!`);
+          overlay.style.display = "none";
+        }
+      });
+    });
+  }
+
+  const titleInput = document.getElementById("pdf-assistant-modal-title");
+  const pageInput = document.getElementById("pdf-assistant-modal-page");
+
+  if (titleInput) titleInput.value = `Page ${pageInfo.pageNumber} Notes`;
+  if (pageInput) pageInput.value = pageInfo.pageNumber;
+
+  overlay.style.display = "flex";
+  setTimeout(() => {
+    if (titleInput) {
+      titleInput.focus();
+      titleInput.select();
+    }
+  }, 50);
+}
+
+/**
+ * Smoothly scrolls to the bookmarked page and highlights it briefly.
+ */
+function navigateToPage(pageNumber) {
+  const targetPage = parseInt(pageNumber, 10);
+  if (isNaN(targetPage) || targetPage < 1) return;
+
+  logMessage(`Navigating to Page ${targetPage}`);
+
+  const estimatedPageHeight = 1000;
+  const targetScrollY = (targetPage - 1) * estimatedPageHeight;
+
+  window.scrollTo({
+    top: targetScrollY,
+    behavior: "smooth"
+  });
+
+  highlightTargetPage();
+}
+
+/**
+ * Creates a translucent glowing outline highlight across the viewport that fades out smoothly.
+ */
+function highlightTargetPage() {
+  let highlight = document.getElementById("pdf-assistant-page-highlight");
+  if (!highlight) {
+    highlight = document.createElement("div");
+    highlight.id = "pdf-assistant-page-highlight";
+    Object.assign(highlight.style, {
+      position: "fixed",
+      top: "0",
+      left: "0",
+      width: "100vw",
+      height: "100vh",
+      pointerEvents: "none",
+      zIndex: "999998",
+      boxShadow: "inset 0 0 50px rgba(6, 182, 212, 0.7), 0 0 30px rgba(6, 182, 212, 0.5)",
+      border: "4px solid #06b6d4",
+      background: "rgba(6, 182, 212, 0.08)",
+      transition: "opacity 1.2s ease-out"
+    });
+    document.body.appendChild(highlight);
+  }
+
+  highlight.style.opacity = "1";
+  highlight.style.display = "block";
+
+  if (highlight._timer) clearTimeout(highlight._timer);
+  highlight._timer = setTimeout(() => {
+    highlight.style.opacity = "0";
+    setTimeout(() => { highlight.style.display = "none"; }, 1200);
+  }, 800);
+}
+
+/* ==========================================================================
    Initialization
    ========================================================================== */
 
@@ -421,6 +737,7 @@ function init() {
   if (pageInfo.isPdf) {
     logMessage("PDF Document detected!");
     initReadingProgress(pageInfo);
+    injectPdfToolbarButton();
   }
 
   // Send a dummy test message with the page title

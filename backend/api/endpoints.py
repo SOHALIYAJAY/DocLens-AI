@@ -6,6 +6,7 @@ import os
 from models.schemas import ChatRequest, ChatResponse, UploadResponse, SummaryRequest, SummaryResponse, LocalUploadRequest
 from services.llm_service import generate_response, generate_summary
 from services.pdf_service import extract_text_from_pdf
+from services.image_service import extract_and_store_images
 from services.chunk_service import chunk_text
 from services.embedding_service import generate_embeddings
 from services.vector_service import add_to_knowledge_base, clear_knowledge_base, get_all_chunks
@@ -39,10 +40,14 @@ async def upload_pdf(file: UploadFile = File(...)):
         clear_knowledge_base()
         add_to_knowledge_base(chunks)
         
+        # 5. Extract images automatically
+        extracted_images = extract_and_store_images(file_bytes)
+        
         return UploadResponse(
             success=True,
             filename=file.filename,
-            num_chunks=len(chunks)
+            num_chunks=len(chunks),
+            images=extracted_images
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -53,7 +58,7 @@ async def upload_local_pdf(request: LocalUploadRequest):
     Endpoint to load a local PDF directly from the filesystem (useful for file:// URLs).
     """
     if not os.path.exists(request.file_path):
-        raise HTTPException(status_code=404, detail="Local file not found on backend.")
+        raise HTTPException(status_code=404, detail=f"Local file not found on backend: {request.file_path}")
     if not request.file_path.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
         
@@ -71,10 +76,13 @@ async def upload_local_pdf(request: LocalUploadRequest):
         clear_knowledge_base()
         add_to_knowledge_base(chunks)
         
+        extracted_images = extract_and_store_images(file_bytes)
+        
         return UploadResponse(
             success=True,
             filename=os.path.basename(request.file_path),
-            num_chunks=len(chunks)
+            num_chunks=len(chunks),
+            images=extracted_images
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -134,3 +142,4 @@ async def summarize_pdf(request: SummaryRequest):
         success=True,
         summary=summary
     )
+

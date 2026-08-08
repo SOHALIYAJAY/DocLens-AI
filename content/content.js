@@ -144,7 +144,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     case "NAVIGATE_TO_PAGE":
       if (request.pageNumber) {
-        navigateToPage(request.pageNumber);
+        navigateToPage(request.pageNumber, request.highlightText);
       }
       sendResponse({ success: true });
       break;
@@ -670,7 +670,7 @@ function openInPageBookmarkModal() {
 /**
  * Smoothly scrolls to the bookmarked page and highlights it briefly.
  */
-function navigateToPage(pageNumber) {
+function navigateToPage(pageNumber, textToHighlight = null) {
   const targetPage = parseInt(pageNumber, 10);
   if (isNaN(targetPage) || targetPage < 1) return;
 
@@ -684,7 +684,53 @@ function navigateToPage(pageNumber) {
     behavior: "smooth"
   });
 
-  highlightTargetPage();
+  if (textToHighlight && typeof pdfjsLib !== "undefined") {
+    // If we have access to the PDF.js text layer (custom viewer), attempt text highlighting
+    highlightSpecificText(textToHighlight);
+  } else {
+    // Fallback to page-level glowing highlight for native Chrome viewer
+    highlightTargetPage();
+  }
+}
+
+/**
+ * Attempts to find and highlight specific text in the DOM.
+ * Works best with PDF.js text layers.
+ */
+function highlightSpecificText(searchText) {
+  if (!searchText) return;
+  const searchLower = searchText.toLowerCase();
+  
+  // A simplistic DOM search over spans (typical of PDF.js text layer)
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+  let node;
+  let found = false;
+  
+  while ((node = walker.nextNode())) {
+    if (node.nodeValue.toLowerCase().includes(searchLower)) {
+      const parent = node.parentNode;
+      // Ensure we don't double highlight
+      if (parent.classList.contains("pdf-assistant-text-highlight")) continue;
+      
+      const originalBg = parent.style.backgroundColor;
+      parent.classList.add("pdf-assistant-text-highlight");
+      parent.style.backgroundColor = "rgba(234, 179, 8, 0.6)"; // yellow highlight
+      parent.style.transition = "background-color 1s ease-out";
+      
+      setTimeout(() => {
+        parent.style.backgroundColor = originalBg;
+        setTimeout(() => parent.classList.remove("pdf-assistant-text-highlight"), 1000);
+      }, 2000);
+      
+      found = true;
+      break; // highlight only the first match to avoid messy UI
+    }
+  }
+  
+  if (!found) {
+    // Fallback if text is not found in DOM
+    highlightTargetPage();
+  }
 }
 
 /**

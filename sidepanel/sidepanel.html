@@ -81,6 +81,12 @@
       <nav class="sidepanel-nav" aria-label="Main navigation">
         <ul class="nav-list" id="nav-list">
           <li>
+            <button type="button" class="nav-item" data-section="navigator">
+              <i class="fa-solid fa-compass" aria-hidden="true"></i>
+              <span>AI Navigator</span>
+            </button>
+          </li>
+          <li>
             <button type="button" class="nav-item active" data-section="chat">
               <i class="fa-solid fa-comments" aria-hidden="true"></i>
               <span>AI Chat</span>
@@ -115,6 +121,49 @@
 
       <!-- Main Content -->
       <main class="sidepanel-main" id="sidepanel-main">
+        <!-- Section 0: AI Navigator -->
+        <section
+          class="panel-section"
+          id="section-navigator"
+          data-section="navigator"
+          aria-labelledby="nav-navigator"
+          hidden
+        >
+          <div class="section-heading">
+            <h2 class="section-title">📚 AI Navigator</h2>
+            <p class="section-desc">Intelligent structure and insights</p>
+          </div>
+
+          <div class="navigator-overview" id="navigator-overview" style="display: none; flex-direction: column; gap: 8px; margin-bottom: 16px;">
+            <!-- Rendered by JS -->
+          </div>
+
+          <div class="bookmark-search-container" style="position: relative; margin-bottom: 16px;">
+            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); font-size: 12px;"></i>
+            <input
+              type="text"
+              id="navigator-search"
+              class="text-input"
+              placeholder="Search sections, definitions, formulas..."
+              style="padding-left: 32px; width: 100%; font-size: 12px; height: 36px; border-radius: var(--radius-md);"
+            />
+          </div>
+
+          <div id="navigator-skeleton" class="skeleton-container" style="display: none;">
+            <div class="skeleton-line" style="width: 100%; height: 40px; margin-bottom: 8px;"></div>
+            <div class="skeleton-line" style="width: 100%; height: 40px; margin-bottom: 8px;"></div>
+            <div class="skeleton-line" style="width: 100%; height: 40px; margin-bottom: 8px;"></div>
+          </div>
+          
+          <div id="navigator-empty-state" style="text-align: center; color: var(--color-text-muted); padding: 20px; font-size: 13px;">
+            Upload or select a PDF to generate the AI Navigator.
+          </div>
+
+          <div id="navigator-accordion" class="accordion-container" style="display: flex; flex-direction: column; gap: 8px;">
+            <!-- Populated by JavaScript -->
+          </div>
+        </section>
+
         <!-- Section 1: AI Chat -->
         <section
           class="panel-section active"
@@ -398,6 +447,7 @@
     </div>
 
     <script src="../services/bookmark-service.js"></script>
+    <script src="navigator.js"></script>
     <script src="sidepanel.js"></script>
   </body>
 </html>

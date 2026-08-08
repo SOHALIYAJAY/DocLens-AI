@@ -5,19 +5,19 @@
   "description": "Read, summarize, and chat with PDF documents using AI directly in your browser.",
   "minimum_chrome_version": "114",
   "icons": {
-    "16": "assets/icons/icon16.png",
-    "32": "assets/icons/icon32.png",
-    "48": "assets/icons/icon48.png",
-    "128": "assets/icons/icon128.png"
+    "16": "assets/icons/icons16.jpg",
+    "32": "assets/icons/icons32.jpg",
+    "48": "assets/icons/icons48.jpg",
+    "128": "assets/icons/icons128.jpg"
   },
   "action": {
     "default_popup": "popup/popup.html",
     "default_title": "AI PDF Assistant",
     "default_icon": {
-      "16": "assets/icons/icon16.png",
-      "32": "assets/icons/icon32.png",
-      "48": "assets/icons/icon48.png",
-      "128": "assets/icons/icon128.png"
+      "16": "assets/icons/icons16.jpg",
+      "32": "assets/icons/icons32.jpg",
+      "48": "assets/icons/icons48.jpg",
+      "128": "assets/icons/icons128.jpg"
     }
   },
   "options_ui": {
@@ -31,7 +31,8 @@
     "storage",
     "activeTab",
     "scripting",
-    "tabs"
+    "tabs",
+    "downloads"
   ],
   "host_permissions": [
     "file:///*",

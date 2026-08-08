@@ -982,6 +982,11 @@ async function handleRefreshSidebar(btnId = "btn-refresh-sidebar") {
           if (message.images) {
             renderExtractedImages(message.images);
           }
+          
+          // Trigger AI Navigator generation
+          if (typeof fetchNavigator === "function") {
+            fetchNavigator();
+          }
         } else {
           statusArea.style.display = "block";
           statusArea.style.borderColor = "#ef4444";

@@ -460,8 +460,83 @@ function handleExtractPdfClick() {
     textArea.innerHTML = "<em>Extracting text... please wait.</em>";
   }
 
-  // Ask background script to begin extraction
-  chrome.runtime.sendMessage({ action: "EXTRACT_PDF_TEXT" });
+  // Ask background script to begin extraction with a dummy callback checking lastError
+  chrome.runtime.sendMessage({ action: "EXTRACT_PDF_TEXT" }, () => {
+    if (chrome.runtime.lastError) {
+      logAction("Send EXTRACT_PDF_TEXT connection notice (harmless during startup):", chrome.runtime.lastError.message);
+    }
+  });
+}
+
+/** Downloads the AI Navigator PDF document. */
+function handleDownloadEmptyPdfClick() {
+  logAction("Download Navigator PDF clicked");
+  const btn = document.getElementById("btn-popup-download");
+  let icon = null;
+  if (btn) {
+    icon = btn.querySelector("i");
+    if (icon) icon.className = "fa-solid fa-spinner fa-spin";
+  }
+  
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const activeTab = tabs[0];
+    const pdfUrl = activeTab?.url;
+    
+    chrome.runtime.sendMessage({ 
+      action: "DOWNLOAD_NAVIGATOR_PDF",
+      payload: { pdfUrl: pdfUrl }
+    }, (response) => {
+      if (icon) icon.className = "fa-solid fa-download";
+      
+      if (chrome.runtime.lastError || !response || !response.success) {
+        const errorMsg = chrome.runtime.lastError?.message || response?.error || "Unknown error";
+        console.error("Failed to download PDF:", errorMsg);
+        alert("Failed to download Navigator PDF: " + errorMsg);
+        return;
+      }
+    
+    try {
+      console.log("DOWNLOAD_NAVIGATOR_PDF response:", response);
+      let base64Data = null;
+      if (response && response.data) {
+        if (response.data.data && response.data.data.pdf_base64) {
+          base64Data = response.data.data.pdf_base64;
+        } else {
+          base64Data = response.data.pdf_base64 || response.data;
+        }
+      }
+      if (!base64Data && response) {
+        base64Data = response.pdf_base64;
+      }
+      
+      if (!base64Data || typeof base64Data !== "string") {
+        throw new Error("Invalid or missing PDF base64 data in response.");
+      }
+      
+      // Clean up whitespace or data URL prefix if present
+      if (base64Data.includes(",")) {
+        base64Data = base64Data.split(",")[1];
+      }
+      base64Data = base64Data.trim();
+      
+      chrome.downloads.download({
+        url: "data:application/pdf;base64," + base64Data,
+        filename: "AI_Navigator.pdf",
+        saveAs: true
+      }, (downloadId) => {
+        if (chrome.runtime.lastError) {
+          console.error("Download failed:", chrome.runtime.lastError.message);
+          alert("Failed to download PDF: " + chrome.runtime.lastError.message);
+        } else {
+          logAction("Download started successfully", { downloadId });
+        }
+      });
+    } catch (e) {
+      console.error("Error initiating download:", e);
+      alert("Failed to initiate PDF download: " + e.message);
+    }
+  });
+  });
 }
 
 /** Copies extracted text to clipboard. */
@@ -501,6 +576,7 @@ function bindEventListeners() {
   document.getElementById("btn-settings")?.addEventListener("click", handleSettingsClick);
   document.getElementById("btn-refresh-popup")?.addEventListener("click", handleRefreshPopup);
   document.getElementById("btn-popup-all-bookmarks")?.addEventListener("click", handleViewAllBookmarksClick);
+  document.getElementById("btn-popup-download")?.addEventListener("click", handleDownloadEmptyPdfClick);
 
   // Quick Actions
   document.getElementById("btn-chat-pdf")?.addEventListener("click", handleChatPdfClick);
@@ -540,12 +616,6 @@ function initPopup() {
   bindEventListeners();
 
   logAction("Popup initialized");
-
-  // Send a dummy test message to the background script
-  chrome.runtime.sendMessage({ 
-    action: "TEST_CONNECTION", 
-    payload: { source: "popup", data: "Hello from the Popup!" } 
-  });
 
   // Load previously extracted text & images from storage if available
   chrome.storage.local.get(["lastExtractedText", "lastExtractedImages"], (stored) => {

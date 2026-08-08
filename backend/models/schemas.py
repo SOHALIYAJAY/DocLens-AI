@@ -82,3 +82,47 @@ class ExplainImageRequest(BaseModel):
     """
     image_id: str = Field(description="The ID of the image to explain")
     prompt: Optional[str] = Field(default=None, description="Optional prompt to guide the explanation")
+
+# ==========================================
+# Navigator Schemas
+# ==========================================
+class NavigatorItem(BaseModel):
+    """
+    A single item in the navigator (e.g., a definition, a figure, a section).
+    """
+    title: str = Field(description="Title or name of the item")
+    page: int = Field(description="The page number where this item is located")
+    description: Optional[str] = Field(default=None, description="Optional short summary or content snippet")
+
+class NavigatorSection(BaseModel):
+    """
+    A group of items (e.g., all formulas, all definitions).
+    """
+    title: str = Field(description="Section title (e.g., 'Formulas', 'Definitions')")
+    summary: Optional[str] = Field(default=None, description="Optional small AI summary for chapters/sections")
+    items: list[NavigatorItem] = Field(default=[], description="List of items in this section")
+
+class NavigatorResponse(BaseModel):
+    """
+    The full navigator response containing document overview and all extracted sections.
+    """
+    success: bool
+    document_name: str
+    pages: int
+    word_count: int
+    estimated_reading_time: str
+    estimated_difficulty: str
+    definitions_found: int
+    formulas_found: int = 0
+    figures_found: int
+    tables_found: int
+    code_blocks_found: int
+    references_found: int
+    chapters_found: int = 0
+    headings_found: int = 0
+    diagrams_found: int = 0
+    topics_found: int = 0
+    images_found: int = 0
+    
+    sections: list[NavigatorSection] = Field(default=[], description="Collapsible sections (Chapters, Definitions, etc.)")
+

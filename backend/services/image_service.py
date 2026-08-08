@@ -31,7 +31,6 @@ def extract_and_store_images(file_bytes: bytes) -> list[dict]:
             
             for img_index, img in enumerate(images):
                 xref = img[0]
-                
                 # Extract image bytes and extension
                 base_image = doc.extract_image(xref)
                 image_bytes = base_image["image"]

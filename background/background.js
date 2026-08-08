@@ -29,6 +29,10 @@ const MESSAGE_ACTIONS = {
   OPEN_SIDE_PANEL: "OPEN_SIDE_PANEL",
   OPEN_OPTIONS: "OPEN_OPTIONS",
   OPEN_CURRENT_PDF: "OPEN_CURRENT_PDF",
+  UPLOAD_PDF: "UPLOAD_PDF",
+  EXTRACT_PDF_NAVIGATOR: "EXTRACT_PDF_NAVIGATOR",
+  DOWNLOAD_NAVIGATOR_PDF: "DOWNLOAD_NAVIGATOR_PDF",
+  GENERATE_NAVIGATOR: "GENERATE_NAVIGATOR",
   CHAT_WITH_PDF: "CHAT_WITH_PDF",
   SUMMARIZE_PDF: "SUMMARIZE_PDF",
   ASK_QUESTION: "ASK_QUESTION",
@@ -42,7 +46,6 @@ const MESSAGE_ACTIONS = {
   SAVE_PROGRESS: "SAVE_PROGRESS",
   GET_PROGRESS: "GET_PROGRESS",
   DELETE_PROGRESS: "DELETE_PROGRESS",
-  UPLOAD_PDF: "UPLOAD_PDF",
   SAVE_BOOKMARK: "SAVE_BOOKMARK",
   GET_BOOKMARKS: "GET_BOOKMARKS",
   UPDATE_BOOKMARK: "UPDATE_BOOKMARK",
@@ -384,6 +387,38 @@ async function handleUploadPdf(payload) {
 }
 
 /**
+ * Handles GENERATE_NAVIGATOR requests.
+ */
+async function handleGenerateNavigator(payload) {
+  logMessage("GENERATE_NAVIGATOR handled", { filename: payload.filename });
+  
+  try {
+    let response;
+    
+    // Since the frontend needs to send the file, we can either re-fetch or use base64 
+    // if payload.base64 is provided.
+    const blob = base64ToBlob(payload.base64);
+    const formData = new FormData();
+    formData.append("file", blob, payload.filename);
+
+    response = await fetch("http://127.0.0.1:8000/generate-navigator", {
+      method: "POST",
+      body: formData,
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Generate Navigator failed: ${response.statusText}`);
+    }
+    
+    const result = await response.json();
+    return { ...result, action: MESSAGE_ACTIONS.GENERATE_NAVIGATOR };
+  } catch (error) {
+    logMessage("GENERATE_NAVIGATOR Error", { error: error.message });
+    throw error;
+  }
+}
+
+/**
  * Handles chat-with-PDF requests.
  */
 async function handleChatWithPdf(payload) {
@@ -426,7 +461,167 @@ async function handleSummarizePdf(payload) {
     const result = await response.json();
     return { ...result, action: MESSAGE_ACTIONS.SUMMARIZE_PDF };
   } catch (error) {
-    logMessage("SUMMARIZE_PDF Error", { error: error.message });
+    logMessage("Error extracting images", { error: error.message });
+    throw error;
+  }
+}
+
+/**
+ * Extracts PDF structure and calls generate-navigator.
+ */
+async function handleExtractPdfNavigator() {
+  logMessage("EXTRACT_PDF_NAVIGATOR triggered");
+  const activeTab = await getActiveTab();
+  
+  if (!activeTab || !isPdfUrl(activeTab.url)) {
+    throw new Error("No active PDF found to generate navigator.");
+  }
+  
+  try {
+    let pdfUrl = activeTab.url;
+    if (pdfUrl.includes("mhjfbmdgcfjbbpaeojofohoefgiehjai") && pdfUrl.includes("url=")) {
+      try {
+        const urlObj = new URL(pdfUrl);
+        const actualUrl = urlObj.searchParams.get("url");
+        if (actualUrl) {
+          pdfUrl = actualUrl;
+        }
+      } catch (e) {
+        logMessage("Could not parse actual URL from Chrome viewer", e);
+      }
+    }
+
+    if (pdfUrl.startsWith("file://")) {
+      logMessage("Local file detected for navigator. Using local path...", { pdfUrl });
+      let localPath = decodeURIComponent(pdfUrl);
+      if (localPath.startsWith("file:///")) {
+        localPath = localPath.substring(8);
+        if (!localPath.match(/^[a-zA-Z]:\//)) {
+          localPath = "/" + localPath;
+        }
+      }
+      
+      // Need a backend endpoint that accepts local path for navigator, 
+      // or we just read it locally in backend. Let's add that to backend next.
+      const res = await fetch("http://127.0.0.1:8000/generate-local-navigator", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_path: localPath })
+      });
+      
+      if (!res.ok) throw new Error(`Backend failed: ${res.statusText}`);
+      const data = await res.json();
+      return { success: true, data };
+      
+    } else if (pdfUrl.startsWith("http")) {
+      logMessage("Web URL detected for navigator. Fetching PDF...", { pdfUrl });
+      
+      const response = await fetch(pdfUrl);
+      if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.statusText}`);
+      
+      const blob = await response.blob();
+      const formData = new FormData();
+      formData.append("file", blob, "document.pdf");
+      
+      const res = await fetch("http://127.0.0.1:8000/generate-navigator", {
+        method: "POST",
+        body: formData
+      });
+      
+      if (!res.ok) throw new Error(`Backend failed: ${res.statusText}`);
+      const data = await res.json();
+      return { success: true, data };
+    }
+  } catch (error) {
+    logMessage("Error extracting navigator", { error: error.message });
+    throw error;
+  }
+}
+
+/**
+ * Extracts PDF structure and calls download-navigator-pdf.
+ */
+async function handleDownloadNavigatorPdf(payload) {
+  logMessage("DOWNLOAD_NAVIGATOR_PDF triggered", { payload });
+  
+  let pdfUrl = payload?.pdfUrl;
+  if (!pdfUrl) {
+    const activeTab = await getActiveTab();
+    pdfUrl = activeTab?.url;
+  }
+  
+  if (!pdfUrl || !isPdfUrl(pdfUrl)) {
+    throw new Error("No active PDF found to download navigator.");
+  }
+  
+  try {
+    if (pdfUrl.includes("mhjfbmdgcfjbbpaeojofohoefgiehjai") && pdfUrl.includes("url=")) {
+      try {
+        const urlObj = new URL(pdfUrl);
+        const actualUrl = urlObj.searchParams.get("url");
+        if (actualUrl) {
+          pdfUrl = actualUrl;
+        }
+      } catch (e) {
+        logMessage("Could not parse actual URL from Chrome viewer", e);
+      }
+    }
+
+    if (pdfUrl.startsWith("file://")) {
+      logMessage("Local file detected for navigator PDF. Using local path...", { pdfUrl });
+      let localPath = decodeURIComponent(pdfUrl);
+      if (localPath.startsWith("file:///")) {
+        localPath = localPath.substring(8);
+        if (!localPath.match(/^[a-zA-Z]:\//)) {
+          localPath = "/" + localPath;
+        }
+      }
+      
+      const res = await fetch("http://127.0.0.1:8000/download-local-navigator-pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_path: localPath })
+      });
+      
+      if (!res.ok) {
+        let errStr = res.statusText;
+        try {
+          const errBody = await res.json();
+          if (errBody && errBody.detail) errStr = errBody.detail;
+        } catch(e) {}
+        throw new Error(`Backend failed: ${errStr}`);
+      }
+      const data = await res.json();
+      return { success: true, data };
+      
+    } else if (pdfUrl.startsWith("http")) {
+      logMessage("Web URL detected for navigator PDF. Fetching PDF...", { pdfUrl });
+      
+      const response = await fetch(pdfUrl);
+      if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.statusText}`);
+      
+      const blob = await response.blob();
+      const formData = new FormData();
+      formData.append("file", blob, "document.pdf");
+      
+      const res = await fetch("http://127.0.0.1:8000/download-navigator-pdf", {
+        method: "POST",
+        body: formData
+      });
+      
+      if (!res.ok) {
+        let errStr = res.statusText;
+        try {
+          const errBody = await res.json();
+          if (errBody && errBody.detail) errStr = errBody.detail;
+        } catch(e) {}
+        throw new Error(`Backend failed: ${errStr}`);
+      }
+      const data = await res.json();
+      return { success: true, data };
+    }
+  } catch (error) {
+    logMessage("Error downloading navigator PDF", { error: error.message });
     throw error;
   }
 }
@@ -880,7 +1075,9 @@ const MESSAGE_HANDLERS = {
   [MESSAGE_ACTIONS.OPEN_OPTIONS]: handleOpenOptions,
   [MESSAGE_ACTIONS.OPEN_CURRENT_PDF]: handleOpenCurrentPdf,
   [MESSAGE_ACTIONS.UPLOAD_PDF]: handleUploadPdf,
-
+  [MESSAGE_ACTIONS.EXTRACT_PDF_NAVIGATOR]: handleExtractPdfNavigator,
+  [MESSAGE_ACTIONS.DOWNLOAD_NAVIGATOR_PDF]: handleDownloadNavigatorPdf,
+  [MESSAGE_ACTIONS.GENERATE_NAVIGATOR]: handleGenerateNavigator,
   [MESSAGE_ACTIONS.CHAT_WITH_PDF]: handleChatWithPdf,
   [MESSAGE_ACTIONS.SUMMARIZE_PDF]: handleSummarizePdf,
   [MESSAGE_ACTIONS.ASK_QUESTION]: handleAskQuestion,

@@ -1,8 +1,10 @@
 # api/endpoints.py
 # This file defines the actual API routes (endpoints) that clients will call.
 
+import base64
 from fastapi import APIRouter, UploadFile, File, HTTPException
 import os
+import traceback
 from models.schemas import ChatRequest, ChatResponse, UploadResponse, SummaryRequest, SummaryResponse, LocalUploadRequest
 from services.llm_service import generate_response, generate_summary
 from services.pdf_service import extract_text_from_pdf
@@ -11,6 +13,9 @@ from services.chunk_service import chunk_text
 from services.embedding_service import generate_embeddings
 from services.vector_service import add_to_knowledge_base, clear_knowledge_base, get_all_chunks
 from services.retriever_service import retrieve_relevant_chunks
+from services.navigator_service import generate_navigator
+from models.schemas import NavigatorResponse
+from services.pdf_generator_service import create_navigator_pdf
 
 # Create an APIRouter instance
 router = APIRouter()
@@ -143,3 +148,160 @@ async def summarize_pdf(request: SummaryRequest):
         summary=summary
     )
 
+@router.post("/generate-navigator", response_model=NavigatorResponse)
+async def create_navigator(file: UploadFile = File(...)):
+    """
+    Endpoint to generate or retrieve the cached AI Document Navigator for a PDF.
+    """
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+        
+    try:
+        # Read file bytes
+        file_bytes = await file.read()
+        
+        # Call navigator service which handles caching internally
+        navigator_res = generate_navigator(file_bytes, file.filename)
+        
+        # Extract links dynamically from the bytes (handles cached PDFs too!)
+        try:
+            from services.pdf_generator_service import extract_links_from_pdf_bytes
+            links = extract_links_from_pdf_bytes(file_bytes)
+            if links:
+                from models.schemas import NavigatorSection, NavigatorItem
+                # Check if "Document Links" section is already in navigator_res.sections
+                has_links = any(s.title == "Document Links" for s in navigator_res.sections)
+                if not has_links:
+                    navigator_res.sections.append(NavigatorSection(
+                        title="Document Links",
+                        items=[NavigatorItem(**l) for l in links]
+                    ))
+        except Exception as e:
+            print(f"Error appending links dynamically: {e}")
+            
+        return navigator_res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/generate-local-navigator", response_model=NavigatorResponse)
+async def create_local_navigator(request: LocalUploadRequest):
+    """
+    Endpoint to generate or retrieve the cached AI Document Navigator for a local PDF.
+    """
+    if not os.path.exists(request.file_path):
+        raise HTTPException(status_code=404, detail=f"Local file not found on backend: {request.file_path}")
+    if not request.file_path.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+        
+    try:
+        # Read file bytes directly from local filesystem
+        with open(request.file_path, 'rb') as f:
+            file_bytes = f.read()
+            
+        filename = os.path.basename(request.file_path)
+        
+        # Call navigator service which handles caching internally
+        navigator_res = generate_navigator(file_bytes, filename)
+        
+        # Extract links dynamically from the bytes (handles cached PDFs too!)
+        try:
+            from services.pdf_generator_service import extract_links_from_pdf_bytes
+            links = extract_links_from_pdf_bytes(file_bytes)
+            if links:
+                from models.schemas import NavigatorSection, NavigatorItem
+                # Check if "Document Links" section is already in navigator_res.sections
+                has_links = any(s.title == "Document Links" for s in navigator_res.sections)
+                if not has_links:
+                    navigator_res.sections.append(NavigatorSection(
+                        title="Document Links",
+                        items=[NavigatorItem(**l) for l in links]
+                    ))
+        except Exception as e:
+            print(f"Error appending links dynamically: {e}")
+            
+        return navigator_res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/download-navigator-pdf")
+async def download_navigator_pdf(file: UploadFile = File(...)):
+    """
+    Endpoint to generate or retrieve the cached AI Document Navigator and return it as a PDF.
+    """
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+        
+    try:
+        file_bytes = await file.read()
+        navigator_res = generate_navigator(file_bytes, file.filename)
+        
+        # Extract links dynamically from the bytes (handles cached PDFs too!)
+        try:
+            from services.pdf_generator_service import extract_links_from_pdf_bytes
+            links = extract_links_from_pdf_bytes(file_bytes)
+            if links:
+                from models.schemas import NavigatorSection, NavigatorItem
+                # Check if "Document Links" section is already in navigator_res.sections
+                has_links = any(s.title == "Document Links" for s in navigator_res.sections)
+                if not has_links:
+                    navigator_res.sections.append(NavigatorSection(
+                        title="Document Links",
+                        items=[NavigatorItem(**l) for l in links]
+                    ))
+        except Exception as e:
+            print(f"Error appending links dynamically: {e}")
+            
+        pdf_bytes = create_navigator_pdf(navigator_res)
+        
+        return {
+            "success": True, 
+            "pdf_base64": base64.b64encode(pdf_bytes).decode("utf-8")
+        }
+    except Exception as e:
+        err_msg = traceback.format_exc()
+        print(err_msg)
+        raise HTTPException(status_code=500, detail=err_msg)
+
+@router.post("/download-local-navigator-pdf")
+async def download_local_navigator_pdf(request: LocalUploadRequest):
+    """
+    Endpoint to generate or retrieve the cached AI Document Navigator for a local PDF and return it as a PDF.
+    """
+    if not os.path.exists(request.file_path):
+        raise HTTPException(status_code=404, detail=f"Local file not found on backend: {request.file_path}")
+    if not request.file_path.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+        
+    try:
+        with open(request.file_path, 'rb') as f:
+            file_bytes = f.read()
+            
+        filename = os.path.basename(request.file_path)
+        navigator_res = generate_navigator(file_bytes, filename)
+        
+        # Extract links dynamically from the bytes (handles cached PDFs too!)
+        try:
+            from services.pdf_generator_service import extract_links_from_pdf_bytes
+            links = extract_links_from_pdf_bytes(file_bytes)
+            if links:
+                from models.schemas import NavigatorSection, NavigatorItem
+                # Check if "Document Links" section is already in navigator_res.sections
+                has_links = any(s.title == "Document Links" for s in navigator_res.sections)
+                if not has_links:
+                    navigator_res.sections.append(NavigatorSection(
+                        title="Document Links",
+                        items=[NavigatorItem(**l) for l in links]
+                    ))
+        except Exception as e:
+            print(f"Error appending links dynamically: {e}")
+            
+        pdf_bytes = create_navigator_pdf(navigator_res)
+        
+        return {
+            "success": True, 
+            "pdf_base64": base64.b64encode(pdf_bytes).decode("utf-8")
+        }
+    except Exception as e:
+        err_msg = traceback.format_exc()
+        print(err_msg)
+        raise HTTPException(status_code=500, detail=err_msg)

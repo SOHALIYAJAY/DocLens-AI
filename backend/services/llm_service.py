@@ -18,7 +18,7 @@ def get_agentrouter_client() -> Anthropic:
     return Anthropic(api_key=api_key, base_url=base_url)
 
 def get_claude_model() -> str:
-    return os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+    return os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
 
 
 def generate_response(context_chunks: List[str], question: str) -> str:

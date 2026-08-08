@@ -53,7 +53,7 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
                 raise ValueError("AGENTROUTER_API_KEY is missing. Cannot perform OCR.")
                 
             base_url = os.getenv("AGENTROUTER_BASE_URL", "https://agentrouter.org")
-            model_name = os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+            model_name = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
             
             client = Anthropic(api_key=api_key, base_url=base_url)
             

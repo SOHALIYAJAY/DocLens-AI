@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # AI PDF Assistant 📄🤖
 
 AI PDF Assistant is a powerful Chrome Extension paired with a FastAPI Python backend designed to read, summarize, analyze, and extract structure from PDF documents. It leverages advanced layout parsers (`pymupdf4llm`) and multimodal AI to assist users in navigating, bookmarking, and downloading structured document summaries.
@@ -166,4 +165,3 @@ Extracts images directly from the PDF and provides a quick AI explanation highli
 
 ## 🤝 License
 This project is licensed under the MIT License.
->>>>>>> 81d0d04f1a190963b4c0c4c2d55dd58e376de3a7

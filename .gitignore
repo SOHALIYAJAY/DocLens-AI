@@ -26,6 +26,13 @@ env/
 htmlcov/
 *.log
 
+# ChromaDB / Database
+.chroma_db/
+chroma_db/
+chroma/
+*.chroma
+chroma.sqlite3
+
 # OS
 .DS_Store
 Thumbs.db

@@ -751,7 +751,10 @@ async function handleSendChat() {
 
   logAction("Send chat message", { message });
   appendChatMessage(message, true);
-  if (input) input.value = "";
+  if (input) {
+    input.value = "";
+    input.style.height = "auto";
+  }
   if (btn) btn.disabled = true;
   if (indicator) indicator.hidden = false;
 
@@ -1076,12 +1079,20 @@ function bindEventListeners() {
   document.getElementById("btn-send-chat")?.addEventListener("click", handleSendChat);
   document.getElementById("btn-clear-chat")?.addEventListener("click", handleClearChat);
 
-  document.getElementById("chat-input")?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      handleSendChat();
-    }
-  });
+  const chatInput = document.getElementById("chat-input");
+  if (chatInput) {
+    chatInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        handleSendChat();
+      }
+    });
+
+    chatInput.addEventListener("input", () => {
+      chatInput.style.height = "auto";
+      chatInput.style.height = Math.min(chatInput.scrollHeight, 90) + "px";
+    });
+  }
 
   // Summary
   document.getElementById("btn-generate-summary")?.addEventListener("click", handleGenerateSummary);

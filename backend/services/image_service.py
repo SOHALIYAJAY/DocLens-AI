@@ -48,9 +48,107 @@ def is_valid_content_image(image_bytes: bytes, width: int, height: int) -> bool:
         return True
 
 
+def extract_vector_diagrams(page, page_num: int, page_seen_hashes: set) -> list[dict]:
+    """
+    Detects vector drawings (charts, flowcharts, architecture diagrams) on a page,
+    filters out thin line separators, text-only pages, and background boxes,
+    crops the diagram tightly, and returns extracted diagram metadata.
+    """
+    diagrams = []
+    try:
+        drawings = page.get_drawings()
+        if not drawings:
+            return diagrams
+
+        page_w = page.rect.width
+        page_h = page.rect.height
+        
+        valid_rects = []
+        for d in drawings:
+            r = d.get("rect")
+            if not r:
+                continue
+            
+            w = r.width
+            h = r.height
+            
+            # 1. Filter out thin line separators (underlines, table borders, section dividers)
+            if w <= 5 or h <= 5:
+                continue
+            if (w / max(h, 0.1)) > 10.0 or (h / max(w, 0.1)) > 10.0:
+                continue
+                
+            # 2. Filter out full-page background boxes
+            if w >= page_w * 0.90 and h >= page_h * 0.90:
+                continue
+                
+            # 3. Must be a meaningful drawing shape / component
+            if w >= 35 and h >= 35:
+                valid_rects.append(r)
+                
+        if not valid_rects:
+            return diagrams
+            
+        # Cluster valid drawing rectangles into a single tight bounding box
+        combined_rect = fitz.Rect()
+        for r in valid_rects:
+            if combined_rect.is_empty:
+                combined_rect = fitz.Rect(r)
+            else:
+                combined_rect |= r
+                
+        if combined_rect.is_empty:
+            return diagrams
+            
+        dw = combined_rect.width
+        dh = combined_rect.height
+        
+        # Diagram must not take up the entire page text body and must be substantial
+        if dw < 60 or dh < 60 or (dw >= page_w * 0.90 and dh >= page_h * 0.85):
+            return diagrams
+            
+        # Add 12px padding around the diagram box for clean margins
+        margin = 12
+        crop_rect = fitz.Rect(
+            max(0, combined_rect.x0 - margin),
+            max(0, combined_rect.y0 - margin),
+            min(page_w, combined_rect.x1 + margin),
+            min(page_h, combined_rect.y1 + margin)
+        )
+        
+        # Render ONLY the tightly cropped diagram region (not the whole page!)
+        pix = page.get_pixmap(dpi=150, clip=crop_rect)
+        diagram_bytes = pix.tobytes("png")
+        width, height = pix.width, pix.height
+        
+        diagram_hash = hashlib.md5(diagram_bytes).hexdigest()
+        if diagram_hash not in page_seen_hashes and is_valid_content_image(diagram_bytes, width, height):
+            page_seen_hashes.add(diagram_hash)
+            diagram_base64 = base64.b64encode(diagram_bytes).decode("utf-8")
+            image_id = str(uuid.uuid4())
+            
+            IMAGE_STORE[image_id] = {
+                "base64_data": diagram_base64,
+                "format": "png",
+                "bytes": diagram_bytes
+            }
+            
+            diagrams.append({
+                "image_id": image_id,
+                "page": page_num + 1,
+                "image_index": len(page_seen_hashes),
+                "format": "png"
+            })
+            
+    except Exception as ve:
+        print(f"Vector diagram extraction warning on page {page_num + 1}: {ve}")
+        
+    return diagrams
+
+
 def extract_and_store_images(file_bytes: bytes) -> list[dict]:
     """
-    Extracts high-quality content images AND vector diagrams/figures from a PDF file using PyMuPDF.
+    Extracts high-quality content images AND cropped vector diagrams/figures from a PDF file using PyMuPDF.
     Clears IMAGE_STORE on every new document upload to avoid showing old PDF images.
     
     Args:
@@ -70,10 +168,10 @@ def extract_and_store_images(file_bytes: bytes) -> list[dict]:
         
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
+            page_seen_hashes = set()
             
             # 1. Extract embedded raster images (JPEG, PNG, etc.)
             images = page.get_images(full=True)
-            page_seen_hashes = set()
             
             for img_index, img in enumerate(images):
                 xref = img[0]
@@ -123,35 +221,10 @@ def extract_and_store_images(file_bytes: bytes) -> list[dict]:
                     "format": image_ext
                 })
 
-            # 2. Extract non-image vector diagrams, flowcharts, & drawn figures
-            # If a page contains vector drawings (shapes, lines, curves, block diagrams) but no embedded images:
-            try:
-                drawings = page.get_drawings()
-                if len(images) == 0 and len(drawings) >= 3:
-                    pix = page.get_pixmap(dpi=150)
-                    diagram_bytes = pix.tobytes("png")
-                    width, height = pix.width, pix.height
-                    
-                    diagram_hash = hashlib.md5(diagram_bytes).hexdigest()
-                    if diagram_hash not in page_seen_hashes and is_valid_content_image(diagram_bytes, width, height):
-                        page_seen_hashes.add(diagram_hash)
-                        diagram_base64 = base64.b64encode(diagram_bytes).decode("utf-8")
-                        image_id = str(uuid.uuid4())
-                        
-                        IMAGE_STORE[image_id] = {
-                            "base64_data": diagram_base64,
-                            "format": "png",
-                            "bytes": diagram_bytes
-                        }
-                        
-                        extracted_images.append({
-                            "image_id": image_id,
-                            "page": page_num + 1,
-                            "image_index": len(page_seen_hashes),
-                            "format": "png"
-                        })
-            except Exception as ve:
-                print(f"Vector diagram extraction warning on page {page_num + 1}: {ve}")
+            # 2. Extract tightly-cropped vector diagrams & flowcharts if no embedded images exist on page
+            if len(images) == 0:
+                vector_diagrams = extract_vector_diagrams(page, page_num, page_seen_hashes)
+                extracted_images.extend(vector_diagrams)
                 
         doc.close()
         return extracted_images

@@ -43,3 +43,50 @@ def chunk_text(pages: List[Dict[str, Any]], chunk_size: int = 1000, overlap: int
             })
 
     return chunks
+
+
+def chunk_text_by_tokens(
+    text: str, 
+    max_tokens_per_chunk: int = 6500, 
+    overlap_tokens: int = 400
+) -> List[str]:
+    """
+    Splits document text into chunks targeting ~6,000-7,000 tokens per chunk
+    with ~300-500 tokens of overlap, preserving paragraph/sentence boundaries
+    and original document sequence.
+    
+    Args:
+        text (str): The full PDF text to be chunked.
+        max_tokens_per_chunk (int): Maximum target tokens per chunk (default 6500).
+        overlap_tokens (int): Token overlap between consecutive chunks (default 400).
+        
+    Returns:
+        List[str]: List of text chunks preserving document order.
+    """
+    if not text or not text.strip():
+        return []
+        
+    from services.token_service import count_tokens
+
+    # Small text optimization: return single chunk if within limit
+    if count_tokens(text) <= max_tokens_per_chunk:
+        return [text]
+
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=max_tokens_per_chunk,
+        chunk_overlap=overlap_tokens,
+        length_function=count_tokens,
+        separators=[
+            "\n\n# ", "\n\n## ", "\n\n### ",
+            "\n\n1. ", "\n\n2. ", "\n\n3. ", "\n\n4. ", "\n\n5. ", "\n\n6. ", "\n\n7. ", "\n\n8. ",
+            "\n\nABSTRACT", "\n\nINTRODUCTION", "\n\nMETHODOLOGY", "\n\nMETHODS", "\n\nRESULTS", "\n\nDISCUSSION", "\n\nCONCLUSION", "\n\nLIMITATIONS",
+            "\n\n",
+            "\n",
+            ". ", "? ", "! ",
+            " ", ""
+        ],
+        is_separator_regex=False,
+    )
+
+    return splitter.split_text(text)
+

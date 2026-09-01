@@ -4,16 +4,16 @@ import os
 import tempfile
 import time
 import base64
-from anthropic import Anthropic, APIError, APIConnectionError
 from dotenv import load_dotenv
-import fitz  # PyMuPDF text preserverd properly structurewise
+import fitz  # PyMuPDF text preserved properly structurewise
+from services.llm_service import get_groq_client
 
 load_dotenv()
 
-def extract_text_from_pdf(file_bytes: bytes) -> str:
+def extract_text_from_pdf(file_bytes: bytes) -> list:
     """
-    Extracts raw text from a PDF file. Uses pypdf for normal PDFs and falls back
-    to Gemini OCR for scanned PDFs.
+    Extracts raw text from a PDF file. Uses PyMuPDF for normal PDFs and falls back
+    to Groq Vision OCR for scanned PDFs.
     
     Args:
         file_bytes (bytes): The raw bytes of the uploaded PDF file.
@@ -46,65 +46,56 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
         # 2. Check if we need to fallback to OCR
         # If the extracted text is very short compared to the number of pages, it's likely scanned.
         if total_text_length < (num_pages * 50) or total_text_length < 100:
-            print("Scanned PDF detected (low text volume). Falling back to Claude OCR via AgentRouter...")
+            print("Scanned PDF detected (low text volume). Falling back to Groq Vision OCR...")
             
-            api_key = os.getenv("AGENTROUTER_API_KEY")
-            if not api_key:
-                raise ValueError("AGENTROUTER_API_KEY is missing. Cannot perform OCR.")
+            client = get_groq_client()
+            vision_model = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")
+            
+            print("Extracting text via Groq Vision OCR...")
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            ocr_pages = []
+            
+            for i in range(len(doc)):
+                page = doc.load_page(i)
+                pix = page.get_pixmap()
+                img_bytes = pix.tobytes("jpeg")
+                img_b64 = base64.b64encode(img_bytes).decode("utf-8")
                 
-            base_url = os.getenv("AGENTROUTER_BASE_URL", "https://agentrouter.org")
-            model_name = os.getenv("CLAUDE_MODEL", "claude-opus-4-8")
-            
-            client = Anthropic(api_key=api_key, base_url=base_url)
-            
-            print("Extracting text via Claude (AgentRouter)...")
-            pdf_base64 = base64.b64encode(file_bytes).decode("utf-8")
-            
-            try:
-                response = client.beta.messages.create(
-                    model=model_name,
-                betas=["pdfs-2024-09-25"],
-                max_tokens=4096,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
+                try:
+                    response = client.chat.completions.create(
+                        model=vision_model,
+                        max_tokens=4096,
+                        messages=[
                             {
-                                "type": "document",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": "application/pdf",
-                                    "data": pdf_base64
-                                }
-                            },
-                            {
-                                "type": "text",
-                                "text": (
-                                    "This is a scanned PDF document. Please transcribe all the text exactly as it appears. "
-                                    "Do not summarize or omit anything. Maintain the original structure where possible."
-                                )
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/jpeg;base64,{img_b64}"
+                                        }
+                                    },
+                                    {
+                                        "type": "text",
+                                        "text": (
+                                            "This is a page from a scanned PDF document. Please transcribe all the text exactly as it appears. "
+                                            "Do not summarize or omit anything. Maintain the original structure where possible."
+                                        )
+                                    }
+                                ]
                             }
                         ]
-                    }
-                ]
-            )
-            
-            except APIConnectionError as e:
-                raise Exception(f"Failed to connect to AgentRouter API during OCR: {str(e)}")
-            except APIError as e:
-                raise Exception(f"AgentRouter API returned an error during OCR: {str(e)}")
-            except Exception as e:
-                raise Exception(f"An unexpected error occurred during OCR extraction: {str(e)}")
-            
-            final_text = ""
-            for block in response.content:
-                if getattr(block, "type", "") == "text":
-                    final_text += block.text
-            
-            extracted_text = final_text.strip()
-            extracted_pages = [{"page": 1, "text": extracted_text}]
+                    )
+                    page_text = response.choices[0].message.content or ""
+                    if page_text.strip():
+                        ocr_pages.append({"page": i + 1, "text": page_text.strip()})
+                except Exception as page_err:
+                    print(f"OCR failed for page {i+1}: {page_err}")
+                    
+            doc.close()
+            if ocr_pages:
+                extracted_pages = ocr_pages
             print("OCR Extraction complete.")
-
                     
         return extracted_pages
     except Exception as e:

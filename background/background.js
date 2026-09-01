@@ -260,11 +260,10 @@ async function configureSidePanel() {
     return;
   }
 
-  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+  await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
 
   logMessage("Side Panel behavior configured", {
-    openPanelOnActionClick: false,
-    reason: "default_popup is set on the browser action",
+    openPanelOnActionClick: true,
   });
 }
 
@@ -462,6 +461,34 @@ async function handleSummarizePdf(payload) {
     return { ...result, action: MESSAGE_ACTIONS.SUMMARIZE_PDF };
   } catch (error) {
     logMessage("Error extracting images", { error: error.message });
+    throw error;
+  }
+}
+
+/**
+ * Handles image vision analysis requests.
+ */
+async function handleExplainImage(payload) {
+  logMessage("EXPLAIN_IMAGE handled", { payload });
+  try {
+    const response = await fetch("http://127.0.0.1:8000/explain-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image_id: payload.image_id,
+        prompt: payload.prompt || null
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Vision analysis failed: ${errText || response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result;
+  } catch (error) {
+    logMessage("EXPLAIN_IMAGE Error", { error: error.message });
     throw error;
   }
 }
@@ -1154,6 +1181,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 
   try {
     await initializeDefaultSettings();
+    await configureSidePanel();
     logMessage("Installation setup completed successfully");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Installation setup failed";
@@ -1253,6 +1281,7 @@ async function initializeServiceWorker() {
   });
 
   try {
+    await configureSidePanel();
     const activeTab = await getActiveTab();
 
     if (activeTab?.url) {

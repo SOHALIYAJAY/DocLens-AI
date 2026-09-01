@@ -5,10 +5,11 @@ import base64
 from fastapi import APIRouter, UploadFile, File, HTTPException
 import os
 import traceback
-from models.schemas import ChatRequest, ChatResponse, UploadResponse, SummaryRequest, SummaryResponse, LocalUploadRequest
+from models.schemas import ChatRequest, ChatResponse, UploadResponse, SummaryRequest, SummaryResponse, LocalUploadRequest, ExplainImageRequest
 from services.llm_service import generate_response, generate_summary
 from services.pdf_service import extract_text_from_pdf
-from services.image_service import extract_and_store_images
+from services.image_service import extract_and_store_images, get_image_base64
+from services.vision_service import analyze_image
 from services.chunk_service import chunk_text
 from services.embedding_service import generate_embeddings
 from services.vector_service import add_to_knowledge_base, clear_knowledge_base, get_all_chunks
@@ -98,13 +99,19 @@ async def chat_pdf(request: ChatRequest):
     Endpoint to answer questions based on the uploaded PDF using RAG.
     """
     try:
+        if not request.question or not request.question.strip():
+            return ChatResponse(
+                success=True,
+                answer="Sorry, we not found answer in this time."
+            )
+
         # 1. Retrieve relevant chunks from the vector store
         relevant_chunks = retrieve_relevant_chunks(request.question)
         
         if not relevant_chunks:
             return ChatResponse(
                 success=True,
-                answer="I don't have any document loaded or couldn't find relevant context."
+                answer="Sorry, we not found answer in this time."
             )
             
         # 2. Generate answer using the LLM and the retrieved context
@@ -115,9 +122,37 @@ async def chat_pdf(request: ChatRequest):
         
         return ChatResponse(
             success=True,
-            answer=answer
+            answer=answer or "Sorry, we not found answer in this time."
         )
     except Exception as e:
+        print(f"[Chat Endpoint Warning]: {str(e)}")
+        return ChatResponse(
+            success=True,
+            answer="Sorry, we not found answer in this time."
+        )
+
+@router.post("/explain-image")
+async def explain_image_endpoint(request: ExplainImageRequest):
+    """
+    Endpoint to analyze and explain an extracted PDF image using Vision AI.
+    """
+    try:
+        img_data = get_image_base64(request.image_id)
+        if not img_data:
+            raise HTTPException(status_code=404, detail="Image session expired or not found. Please re-extract PDF.")
+
+        explanation = analyze_image(
+            image_base64=img_data["base64_data"],
+            image_format=img_data["format"],
+            prompt=request.prompt
+        )
+
+        return {
+            "success": True,
+            "data": explanation
+        }
+    except Exception as e:
+        print(f"[Explain Image Error]: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/summarize", response_model=SummaryResponse)

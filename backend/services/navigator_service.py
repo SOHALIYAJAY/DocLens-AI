@@ -5,7 +5,7 @@ import fitz
 import pymupdf4llm
 from pydantic import ValidationError
 from models.schemas import NavigatorResponse, NavigatorSection, NavigatorItem
-from services.llm_service import get_agentrouter_client, get_claude_model
+from services.llm_service import get_groq_client, get_groq_model
 
 CACHE_DIR = ".navigator_cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
@@ -166,8 +166,8 @@ def enrich_with_llm(structured_data: dict, filename: str) -> NavigatorResponse:
     """
     Uses LLM to extract Chapters, Headings, Definitions, Formulas, Code Blocks, References, Diagrams, Topics, and summarize sections.
     """
-    client = get_agentrouter_client()
-    model_name = get_claude_model()
+    client = get_groq_client()
+    model_name = get_groq_model()
     
     # We will pass a truncated version of the full text to avoid context limits if too large,
     # or chunk it. For simplicity, we take the first 80000 characters for structure detection.
@@ -220,15 +220,17 @@ Rules:
     difficulty = "Intermediate"
     
     try:
-        response = client.messages.create(
+        response = client.chat.completions.create(
             model=model_name,
             max_tokens=2048,
             temperature=0.0,
-            system="You only output raw valid JSON.",
-            messages=[{"role": "user", "content": prompt}]
+            messages=[
+                {"role": "system", "content": "You only output raw valid JSON."},
+                {"role": "user", "content": prompt}
+            ]
         )
         
-        final_text = "".join([b.text for b in response.content if getattr(b, "type", "") == "text"])
+        final_text = response.choices[0].message.content or ""
         final_text = final_text.replace("```json", "").replace("```", "").strip()
         
         extracted = json.loads(final_text)

@@ -45,7 +45,10 @@ class SummaryRequest(BaseModel):
     Schema for the incoming request to the /summarize endpoint.
     It expects the text extracted from the PDF and the desired summary type.
     """
-    pdf_text: str
+    pdf_text: Optional[str] = Field(
+        default=None,
+        description="Optional extracted text. If omitted, vector store chunks are used."
+    )
     summary_type: Optional[str] = Field(
         default="medium", 
         description="The length and detail level of the summary (small, medium, large)"

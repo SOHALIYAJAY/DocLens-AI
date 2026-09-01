@@ -27,21 +27,54 @@
 
   <body>
     <div class="sidepanel" role="application" aria-label="AI PDF Assistant Workspace">
-      <div class="pdf-file-bar" style="display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; background: rgba(0, 0, 0, 0.2); border-bottom: 1px solid var(--color-border); flex-shrink: 0;">
-        <span class="header-pdf-name" id="header-pdf-name" style="font-size: 12px; color: var(--color-text-muted); font-weight: 500; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-          <i class="fa-solid fa-file-pdf" style="color: var(--color-primary);"></i>
-          <span>Document Active</span>
-        </span>
+      <div class="pdf-file-bar" style="display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: rgba(0, 0, 0, 0.25); border-bottom: 1px solid var(--color-border); flex-shrink: 0; position: relative;">
+        <!-- Left: Active Section Dropdown Menu -->
+        <div class="menu-dropdown-wrapper" style="position: relative;">
+          <button type="button" class="btn-menu-dropdown" id="btn-nav-menu" style="display: flex; align-items: center; gap: 6px; background: rgba(30, 41, 59, 0.8); border: 1px solid var(--color-border); color: var(--color-text); padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: background 0.2s;">
+            <i class="fa-solid fa-comments" id="nav-menu-icon" style="color: #3b82f6; font-size: 12px;"></i>
+            <span id="nav-menu-label">AI Chat</span>
+            <i class="fa-solid fa-chevron-down" style="font-size: 10px; color: var(--color-text-muted); margin-left: 2px;"></i>
+          </button>
+          
+          <!-- Dropdown Popover Menu -->
+          <div id="nav-menu-dropdown" style="display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 100; min-width: 165px; background: #0f172a; border: 1px solid var(--color-border); border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); padding: 4px; backdrop-filter: blur(12px);">
+            <button type="button" class="nav-menu-option active" data-section="chat" style="width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: none; background: transparent; color: var(--color-text); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; text-align: left;">
+              <i class="fa-solid fa-comments" style="width: 16px; text-align: center; color: #3b82f6;"></i>
+              <span>AI Chat</span>
+            </button>
+            <button type="button" class="nav-menu-option" data-section="summary" style="width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: none; background: transparent; color: var(--color-text); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; text-align: left;">
+              <i class="fa-solid fa-wand-magic-sparkles" style="width: 16px; text-align: center; color: #a855f7;"></i>
+              <span>PDF Summary</span>
+            </button>
+            <button type="button" class="nav-menu-option" data-section="qa" style="width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: none; background: transparent; color: var(--color-text); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; text-align: left;">
+              <i class="fa-solid fa-circle-question" style="width: 16px; text-align: center; color: #06b6d4;"></i>
+              <span>Q&amp;A</span>
+            </button>
+            <button type="button" class="nav-menu-option" data-section="images" style="width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: none; background: transparent; color: var(--color-text); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; text-align: left;">
+              <i class="fa-solid fa-image" style="width: 16px; text-align: center; color: #f59e0b;"></i>
+              <span>Images</span>
+            </button>
+            <button type="button" class="nav-menu-option" data-section="bookmarks" style="width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: none; background: transparent; color: var(--color-text); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; text-align: left;">
+              <i class="fa-solid fa-bookmark" style="width: 16px; text-align: center; color: #ec4899;"></i>
+              <span>Bookmarks</span>
+            </button>
+          </div>
+        </div>
+
         <div style="display: flex; align-items: center; gap: 4px;">
+          <span class="header-pdf-name" id="header-pdf-name" style="font-size: 11px; color: var(--color-text-muted); font-weight: 500; display: flex; align-items: center; gap: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px;">
+            <i class="fa-solid fa-file-pdf" style="color: var(--color-primary); font-size: 11px;"></i>
+            <span>Active</span>
+          </span>
           <button
             type="button"
             class="icon-btn"
             id="btn-refresh-sidebar"
             aria-label="Refresh Sidebar"
             title="Refresh Sidebar"
-            style="width: 28px; height: 28px;"
+            style="width: 26px; height: 26px;"
           >
-            <i class="fa-solid fa-rotate" style="font-size: 13px;"></i>
+            <i class="fa-solid fa-rotate" style="font-size: 12px;"></i>
           </button>
           <button
             type="button"
@@ -49,120 +82,26 @@
             id="btn-quick-bookmarks"
             aria-label="Open Stored Bookmarks"
             title="Stored Bookmarks List"
-            style="width: 28px; height: 28px; color: var(--color-accent);"
+            style="width: 26px; height: 26px; color: var(--color-accent);"
           >
-            <i class="fa-solid fa-bookmark" style="font-size: 13px;"></i>
-          </button>
-          <button
-            type="button"
-            class="icon-btn"
-            id="btn-settings"
-            aria-label="Open settings"
-            title="Settings"
-            style="width: 28px; height: 28px;"
-          >
-            <i class="fa-solid fa-gear" style="font-size: 13px;"></i>
+            <i class="fa-solid fa-bookmark" style="font-size: 12px;"></i>
           </button>
         </div>
       </div>
 
       <!-- PDF Actions (Extract button) -->
-      <div class="pdf-actions-container" style="padding: 12px 16px; border-bottom: 1px solid var(--color-border); background: rgba(15, 23, 42, 0.4); display: flex; flex-direction: column; gap: 8px;">
-        <button type="button" class="btn btn-primary btn-block" id="btn-extract-pdf" style="background: #10a37f; border-color: #10a37f; color: #fff; padding: 10px; font-weight: 600; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; width: 100%;">
-          <i class="fa-solid fa-file-lines" aria-hidden="true"></i>
+      <div class="pdf-actions-container" style="padding: 6px 12px; border-bottom: 1px solid var(--color-border); background: rgba(15, 23, 42, 0.4); display: flex; flex-direction: column; gap: 6px;">
+        <button type="button" class="btn btn-primary btn-block" id="btn-extract-pdf" style="background: #10a37f; border-color: #10a37f; color: #fff; padding: 6px 10px; font-weight: 600; border-radius: 6px; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 12px; width: 100%;">
+          <i class="fa-solid fa-file-lines" aria-hidden="true" style="font-size: 12px;"></i>
           <span>Extract Text &amp; Images from PDF</span>
         </button>
-        <div id="extraction-status-area" style="display: none; padding: 8px 12px; background: rgba(6, 182, 212, 0.1); border-left: 3px solid var(--color-primary); border-radius: 4px; font-size: 12px; color: var(--color-text-muted);">
+        <div id="extraction-status-area" style="display: none; padding: 6px 10px; background: rgba(6, 182, 212, 0.1); border-left: 3px solid var(--color-primary); border-radius: 4px; font-size: 11px; color: var(--color-text-muted);">
           <!-- Content populated by JS -->
         </div>
       </div>
 
-      <!-- Navigation -->
-      <nav class="sidepanel-nav" aria-label="Main navigation">
-        <ul class="nav-list" id="nav-list">
-          <li>
-            <button type="button" class="nav-item" data-section="navigator">
-              <i class="fa-solid fa-compass" aria-hidden="true"></i>
-              <span>AI Navigator</span>
-            </button>
-          </li>
-          <li>
-            <button type="button" class="nav-item active" data-section="chat">
-              <i class="fa-solid fa-comments" aria-hidden="true"></i>
-              <span>AI Chat</span>
-            </button>
-          </li>
-          <li>
-            <button type="button" class="nav-item" data-section="summary">
-              <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
-              <span>PDF Summary</span>
-            </button>
-          </li>
-          <li>
-            <button type="button" class="nav-item" data-section="qa">
-              <i class="fa-solid fa-circle-question" aria-hidden="true"></i>
-              <span>Q&amp;A</span>
-            </button>
-          </li>
-          <li>
-            <button type="button" class="nav-item" data-section="images">
-              <i class="fa-solid fa-image" aria-hidden="true"></i>
-              <span>Images</span>
-            </button>
-          </li>
-          <li>
-            <button type="button" class="nav-item" data-section="bookmarks">
-              <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
-              <span>Bookmarks</span>
-            </button>
-          </li>
-        </ul>
-      </nav>
-
       <!-- Main Content -->
       <main class="sidepanel-main" id="sidepanel-main">
-        <!-- Section 0: AI Navigator -->
-        <section
-          class="panel-section"
-          id="section-navigator"
-          data-section="navigator"
-          aria-labelledby="nav-navigator"
-          hidden
-        >
-          <div class="section-heading">
-            <h2 class="section-title">📚 AI Navigator</h2>
-            <p class="section-desc">Intelligent structure and insights</p>
-          </div>
-
-          <div class="navigator-overview" id="navigator-overview" style="display: none; flex-direction: column; gap: 8px; margin-bottom: 16px;">
-            <!-- Rendered by JS -->
-          </div>
-
-          <div class="bookmark-search-container" style="position: relative; margin-bottom: 16px;">
-            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); font-size: 12px;"></i>
-            <input
-              type="text"
-              id="navigator-search"
-              class="text-input"
-              placeholder="Search sections, definitions, formulas..."
-              style="padding-left: 32px; width: 100%; font-size: 12px; height: 36px; border-radius: var(--radius-md);"
-            />
-          </div>
-
-          <div id="navigator-skeleton" class="skeleton-container" style="display: none;">
-            <div class="skeleton-line" style="width: 100%; height: 40px; margin-bottom: 8px;"></div>
-            <div class="skeleton-line" style="width: 100%; height: 40px; margin-bottom: 8px;"></div>
-            <div class="skeleton-line" style="width: 100%; height: 40px; margin-bottom: 8px;"></div>
-          </div>
-          
-          <div id="navigator-empty-state" style="text-align: center; color: var(--color-text-muted); padding: 20px; font-size: 13px;">
-            Upload or select a PDF to generate the AI Navigator.
-          </div>
-
-          <div id="navigator-accordion" class="accordion-container" style="display: flex; flex-direction: column; gap: 8px;">
-            <!-- Populated by JavaScript -->
-          </div>
-        </section>
 
         <!-- Section 1: AI Chat -->
         <section
@@ -189,7 +128,7 @@
                 <i class="fa-solid fa-robot" aria-hidden="true"></i>
               </div>
               <div class="message-bubble">
-                <p>Hello! I can help you understand this PDF. Ask me anything or try a suggested question below.</p>
+                <p>Hello! I can help you understand this PDF. Ask me anything!</p>
               </div>
             </div>
 
@@ -200,13 +139,6 @@
               <div class="typing-dots">
                 <span></span><span></span><span></span>
               </div>
-            </div>
-          </div>
-
-          <div class="suggested-questions" id="suggested-questions">
-            <p class="suggested-label">Suggested questions</p>
-            <div class="suggested-list" id="suggested-list">
-              <!-- Populated by JavaScript -->
             </div>
           </div>
 
@@ -275,25 +207,39 @@
             <p class="section-desc">Get precise answers from your PDF</p>
           </div>
 
-          <div class="input-group">
+          <div class="input-group" style="display: flex; gap: 8px; margin-bottom: 16px;">
             <input
               type="text"
               id="qa-question-input"
               class="text-input"
               placeholder="Ask a question about this PDF..."
               aria-label="Question input"
+              style="flex: 1; height: 38px; font-size: 13px; border-radius: var(--radius-md);"
             />
-            <button type="button" class="btn btn-primary" id="btn-ask-question">
+            <button type="button" class="btn btn-primary" id="btn-ask-question" style="height: 38px; padding: 0 16px; font-weight: 600;">
               <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
               Ask
             </button>
           </div>
 
-          <article class="glass-card answer-card" id="qa-answer-card">
-            <h3 class="card-heading">Answer</h3>
-            <p class="card-body" id="qa-answer-text">
-              Gradient descent is an iterative optimization algorithm used to minimize the loss function by adjusting model weights in the direction of steepest descent.
-            </p>
+          <article class="glass-card answer-card" id="qa-answer-card" style="display: none; padding: 14px; border-radius: var(--radius-md); background: rgba(30, 41, 59, 0.5); border: 1px solid var(--color-border);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px;">
+              <h3 class="card-heading" style="margin: 0; font-size: 13px; font-weight: 600; color: var(--color-primary); display: flex; align-items: center; gap: 6px;">
+                <i class="fa-solid fa-lightbulb"></i>
+                <span>Answer</span>
+              </h3>
+              <button type="button" class="btn-icon" id="btn-copy-qa-answer" title="Copy answer" style="width: 26px; height: 26px;">
+                <i class="fa-solid fa-copy"></i>
+              </button>
+            </div>
+            
+            <div id="qa-loading-indicator" style="display: none; align-items: center; gap: 8px; color: #3b82f6; padding: 8px 0; font-size: 12px;">
+              <i class="fa-solid fa-spinner fa-spin"></i>
+              <span>Searching PDF &amp; generating answer...</span>
+            </div>
+            
+            <div class="card-body" id="qa-answer-text" style="font-size: 13px; line-height: 1.6; color: var(--color-text);">
+            </div>
           </article>
         </section>
 
@@ -338,15 +284,6 @@
               <i class="fa-solid fa-plus" aria-hidden="true"></i>
               Add Bookmark
             </button>
-            <div class="bookmark-sort-wrapper">
-              <select id="bookmark-sort-select" aria-label="Sort Bookmarks" class="text-input" style="padding: 8px 10px; font-size: 12px; height: 38px; border-radius: var(--radius-md); background: rgba(30, 41, 59, 0.8); color: var(--color-text); border: 1px solid var(--color-border); cursor: pointer;">
-                <option value="page-asc">Page (1 → 9)</option>
-                <option value="page-desc">Page (9 → 1)</option>
-                <option value="title">Title (A-Z)</option>
-                <option value="newest">Newest First</option>
-                <option value="oldest">Oldest First</option>
-              </select>
-            </div>
           </div>
 
           <!-- Search Box -->
@@ -377,18 +314,7 @@
         </section>
       </main>
 
-      <!-- Footer -->
-      <footer class="sidepanel-footer">
-        <div class="footer-stat">
-          <span class="footer-label">Storage</span>
-          <span class="footer-value" id="footer-storage">12.4 / 50 MB</span>
-        </div>
 
-        <div class="footer-stat">
-          <span class="footer-label">Version</span>
-          <span class="footer-value" id="footer-version">v1.0.0</span>
-        </div>
-      </footer>
     </div>
 
     <!-- Bookmark Add/Edit Modal -->

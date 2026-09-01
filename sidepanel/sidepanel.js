@@ -92,6 +92,82 @@ function showAlert(message) {
   window.alert(message);
 }
 
+/**
+ * Escapes HTML characters to prevent XSS.
+ */
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+/**
+ * Basic markdown parser to convert text to HTML for AI responses.
+ */
+function formatMarkdown(text) {
+  if (!text) return "";
+  
+  let html = text;
+  
+  // 1. Bold: **text**
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // 2. List items: * text or - text
+  html = html.replace(/^\s*[\*\-]\s+(.*)/gm, '<li>$1</li>');
+  
+  // 3. Wrap consecutive <li> tags in <ul>
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, match => `<ul style="margin: 8px 0; padding-left: 20px; list-style-type: disc;">${match}</ul>`);
+  
+  // 4. Parse tables
+  html = html.replace(/(?:(?:\|.*\|)\s*\n?)+/g, match => {
+     if (!match.match(/\|[-\s|:]+\|/)) {
+        return match;
+     }
+     let rows = match.trim().split('\n');
+     let tableHtml = '<table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 13px;">';
+     
+     let isHeader = true;
+     for (let i = 0; i < rows.length; i++) {
+         let row = rows[i].trim();
+         if (row.match(/^\|[-\s|:]+\|$/)) {
+             isHeader = false;
+             continue;
+         }
+         
+         let cells = row.split('|');
+         if (cells.length > 0 && cells[0].trim() === '') cells.shift();
+         if (cells.length > 0 && cells[cells.length - 1].trim() === '') cells.pop();
+         
+         tableHtml += '<tr>';
+         let tag = isHeader ? 'th' : 'td';
+         let style = isHeader 
+           ? 'border: 1px solid #555; padding: 6px; background-color: rgba(255,255,255,0.1); text-align: left; font-weight: bold;' 
+           : 'border: 1px solid #555; padding: 6px;';
+           
+         cells.forEach(cell => {
+             tableHtml += `<${tag} style="${style}">${cell.trim()}</${tag}>`;
+         });
+         tableHtml += '</tr>';
+     }
+     tableHtml += '</table>';
+     return tableHtml;
+  });
+  
+  // 5. Wrap blocks in <p> and replace remaining single newlines with <br>
+  html = html.split(/\n{2,}/).map(block => {
+    if (block.trim().startsWith('<ul') || block.trim().startsWith('<table')) {
+      return block;
+    }
+    return `<p style="margin-bottom: 8px;">${block.replace(/\n/g, '<br>')}</p>`;
+  }).join('');
+  
+  return html;
+}
+
 /* ==========================================================================
    Navigation
    ========================================================================== */
@@ -101,16 +177,18 @@ function showAlert(message) {
  * @param {string} sectionId - Target section identifier
  */
 function navigateToSection(sectionId) {
+  const dropdown = document.getElementById("nav-menu-dropdown");
+  if (dropdown) dropdown.style.display = "none";
+
   if (sectionId === activeSection) {
     return;
   }
 
   const sections = document.querySelectorAll(".panel-section");
-  const navItems = document.querySelectorAll(".nav-item");
+  const navItems = document.querySelectorAll(".nav-item, .nav-menu-option");
 
   sections.forEach((section) => {
     const isTarget = section.dataset.section === sectionId;
-
     section.classList.toggle("active", isTarget);
     section.hidden = !isTarget;
   });
@@ -118,6 +196,26 @@ function navigateToSection(sectionId) {
   navItems.forEach((item) => {
     item.classList.toggle("active", item.dataset.section === sectionId);
   });
+
+  // Update dropdown button label and icon
+  const SECTION_MAP = {
+    chat: { label: "AI Chat", icon: "fa-comments", color: "#3b82f6" },
+    summary: { label: "PDF Summary", icon: "fa-wand-magic-sparkles", color: "#a855f7" },
+    qa: { label: "Q&A", icon: "fa-circle-question", color: "#06b6d4" },
+    images: { label: "Images", icon: "fa-image", color: "#f59e0b" },
+    bookmarks: { label: "Bookmarks", icon: "fa-bookmark", color: "#ec4899" },
+  };
+
+  const info = SECTION_MAP[sectionId];
+  if (info) {
+    const menuLabel = document.getElementById("nav-menu-label");
+    const menuIcon = document.getElementById("nav-menu-icon");
+    if (menuLabel) menuLabel.textContent = info.label;
+    if (menuIcon) {
+      menuIcon.className = `fa-solid ${info.icon}`;
+      menuIcon.style.color = info.color;
+    }
+  }
 
   activeSection = sectionId;
   logAction("Navigated to section", { section: sectionId });
@@ -128,22 +226,32 @@ function navigateToSection(sectionId) {
 }
 
 /**
- * Binds click handlers to navigation items.
+ * Binds click handlers to navigation dropdown menu.
  */
 function initNavigation() {
-  const navList = document.getElementById("nav-list");
+  const btnMenu = document.getElementById("btn-nav-menu");
+  const dropdown = document.getElementById("nav-menu-dropdown");
 
-  navList?.addEventListener("click", (event) => {
-    const navButton = event.target.closest(".nav-item");
-
-    if (!navButton) {
-      return;
+  btnMenu?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (dropdown) {
+      const isVisible = dropdown.style.display === "block";
+      dropdown.style.display = isVisible ? "none" : "block";
     }
+  });
 
-    const sectionId = navButton.dataset.section;
+  dropdown?.addEventListener("click", (event) => {
+    const optionBtn = event.target.closest(".nav-menu-option");
+    if (optionBtn) {
+      const sectionId = optionBtn.dataset.section;
+      if (sectionId) navigateToSection(sectionId);
+    }
+  });
 
-    if (sectionId) {
-      navigateToSection(sectionId);
+  // Close dropdown when clicking outside
+  document.addEventListener("click", (event) => {
+    if (dropdown && !dropdown.contains(event.target) && !btnMenu?.contains(event.target)) {
+      dropdown.style.display = "none";
     }
   });
 }
@@ -606,23 +714,103 @@ function handleSettingsClick() {
    Event Handlers — AI Chat
    ========================================================================== */
 
-function handleSendChat() {
+function appendChatMessage(text, isUser = false) {
+  const container = document.getElementById("chat-messages");
+  const typingIndicator = document.getElementById("typing-indicator");
+  if (!container) return;
+
+  const msgDiv = document.createElement("div");
+  msgDiv.className = isUser ? "message message-user" : "message message-ai";
+  
+  const avatarClass = isUser ? "user" : "ai";
+  const avatarIcon = isUser ? "fa-user" : "fa-robot";
+  
+  msgDiv.innerHTML = `
+    <div class="message-avatar ${avatarClass}">
+      <i class="fa-solid ${avatarIcon}" aria-hidden="true"></i>
+    </div>
+    <div class="message-bubble">
+      ${isUser ? `<p>${escapeHtml(text)}</p>` : formatMarkdown(text)}
+    </div>
+  `;
+
+  if (typingIndicator) {
+    container.insertBefore(msgDiv, typingIndicator);
+  } else {
+    container.appendChild(msgDiv);
+  }
+  container.scrollTop = container.scrollHeight;
+}
+
+async function handleSendChat() {
   const input = document.getElementById("chat-input");
+  const btn = document.getElementById("btn-send-chat");
+  const indicator = document.getElementById("typing-indicator");
   const message = input?.value.trim();
 
-  if (!message) {
-    showAlert("Please enter a message.");
-    return;
-  }
+  if (!message) return;
 
   logAction("Send chat message", { message });
-  showAlert(`Message sent: "${message}"\n(AI response not implemented yet.)`);
-  input.value = "";
+  appendChatMessage(message, true);
+  if (input) input.value = "";
+  if (btn) btn.disabled = true;
+  if (indicator) indicator.hidden = false;
+
+  try {
+    const response = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: "CHAT_WITH_PDF",
+        payload: { question: message }
+      }, (res) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          resolve(res || { success: false, error: "No response from background." });
+        }
+      });
+    });
+
+    if (indicator) indicator.hidden = true;
+    if (btn) btn.disabled = false;
+
+    if (!response || response.success === false) {
+      const errDetail = response?.error || "Failed to get response from PDF.";
+      appendChatMessage(`❌ Error: ${errDetail}`, false);
+    } else {
+      const answerData = response.data || response;
+      const answer = answerData.answer || response.answer || "No response received.";
+      appendChatMessage(answer, false);
+    }
+  } catch (err) {
+    if (indicator) indicator.hidden = true;
+    if (btn) btn.disabled = false;
+    appendChatMessage(`❌ Error: ${err.message}`, false);
+  }
 }
 
 function handleClearChat() {
-  logAction("Clear chat clicked");
-  showAlert("Chat history will be cleared.\n(Not implemented yet.)");
+  const container = document.getElementById("chat-messages");
+  if (container) {
+    container.innerHTML = `
+      <div class="message message-ai">
+        <div class="message-avatar ai">
+          <i class="fa-solid fa-robot" aria-hidden="true"></i>
+        </div>
+        <div class="message-bubble">
+          <p>Hello! I can help you understand this PDF. Ask me anything or try a suggested question below.</p>
+        </div>
+      </div>
+      <div class="typing-indicator" id="typing-indicator" hidden>
+        <div class="message-avatar ai">
+          <i class="fa-solid fa-robot" aria-hidden="true"></i>
+        </div>
+        <div class="typing-dots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    `;
+  }
+  showToast("Chat cleared!");
 }
 
 /**
@@ -672,9 +860,53 @@ function handleSummaryLengthToggle(event) {
   logAction("Summary length changed", { length: currentSummaryLength });
 }
 
-function handleGenerateSummary() {
+async function handleGenerateSummary() {
   logAction("Generate summary clicked", { length: currentSummaryLength });
-  showAlert(`Generating ${currentSummaryLength} AI summary...\n(Not implemented yet.)`);
+  
+  const generateBtn = document.getElementById("btn-generate-summary");
+  const summaryOutput = document.getElementById("executive-summary");
+  
+  if (!summaryOutput) return;
+
+  // Map length toggles: "short" -> "small", "long" -> "large"
+  let summaryType = currentSummaryLength;
+  if (summaryType === "short") summaryType = "small";
+  if (summaryType === "long") summaryType = "large";
+
+  // Visual loading state
+  if (generateBtn) {
+    generateBtn.disabled = true;
+    generateBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating Summary...';
+  }
+
+  summaryOutput.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 8px; color: var(--color-accent-teal, #20b2aa);">
+      <i class="fa-solid fa-circle-notch fa-spin"></i> 
+      Generating ${summaryType} summary via Groq AI...
+    </div>
+  `;
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: "SUMMARIZE_PDF",
+      payload: { summary_type: summaryType }
+    });
+
+    if (response && response.success && response.data) {
+      const summaryText = response.data.summary || response.data;
+      summaryOutput.innerHTML = formatMarkdown(summaryText);
+    } else {
+      const err = response?.error || "Failed to generate summary.";
+      summaryOutput.innerHTML = `<span style="color: #ff6b6b;">⚠️ ${escapeHtml(err)}</span>`;
+    }
+  } catch (error) {
+    summaryOutput.innerHTML = `<span style="color: #ff6b6b;">⚠️ Error: ${escapeHtml(error.message)}</span>`;
+  } finally {
+    if (generateBtn) {
+      generateBtn.disabled = false;
+      generateBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Generate Summary';
+    }
+  }
 }
 
 async function handleCopySummary(event) {
@@ -727,40 +959,69 @@ function handleExportSummary() {
   logAction("Exported summary to TXT");
 }
 
-function handleAskQuestion() {
+async function handleAskQuestion() {
   const input = document.getElementById("qa-question-input");
+  const btn = document.getElementById("btn-ask-question");
+  const answerCard = document.getElementById("qa-answer-card");
+  const loadingIndicator = document.getElementById("qa-loading-indicator");
+  const answerText = document.getElementById("qa-answer-text");
+
   const question = input?.value.trim();
 
   if (!question) {
-    showAlert("Please enter a question.");
+    showToast("Please enter a question about your PDF.", true);
     return;
   }
 
-  logAction("Ask question", { question });
-  showAlert(`Question submitted: "${question}"\n(AI answer not implemented yet.)`);
+  logAction("Ask Question triggered", { question });
+
+  if (answerCard) answerCard.style.display = "block";
+  if (loadingIndicator) loadingIndicator.style.display = "flex";
+  if (answerText) answerText.innerHTML = "";
+  if (btn) btn.disabled = true;
+
+  try {
+    const response = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({
+        action: "CHAT_WITH_PDF",
+        payload: { question }
+      }, (res) => {
+        if (chrome.runtime.lastError) {
+          resolve({ success: false, error: chrome.runtime.lastError.message });
+        } else {
+          resolve(res || { success: false, error: "No response from extension background." });
+        }
+      });
+    });
+
+    if (loadingIndicator) loadingIndicator.style.display = "none";
+    if (btn) btn.disabled = false;
+
+    if (!response || response.success === false) {
+      if (answerText) {
+        answerText.innerHTML = "Sorry, we not found answer in this time.";
+      }
+    } else {
+      const answerData = response.data || response;
+      const answer = answerData.answer || response.answer || "Sorry, we not found answer in this time.";
+      if (answerText) {
+        answerText.innerHTML = formatMarkdown(answer);
+      }
+      logAction("Question answered successfully");
+    }
+  } catch (err) {
+    if (loadingIndicator) loadingIndicator.style.display = "none";
+    if (btn) btn.disabled = false;
+    if (answerText) {
+      answerText.innerHTML = "Sorry, we not found answer in this time.";
+    }
+  }
 }
 
 
 function handleAddNote() {
   logAction("Add note clicked");
   showAlert("Add a new note.\n(Not implemented yet.)");
-}
-
-function handleBookmarkPage() {
-  logAction("Bookmark current page clicked");
-  
-  chrome.runtime.sendMessage({ action: "SAVE_BOOKMARK", payload: {} }, (response) => {
-    if (chrome.runtime.lastError || !response || !response.success) {
-      const errorMsg = chrome.runtime.lastError?.message || response?.error || "Unknown error";
-      logAction("Failed to bookmark page", { error: errorMsg });
-      showAlert("Failed to bookmark page: " + errorMsg);
-    } else {
-      logAction("Page bookmarked successfully");
-      showAlert(`Bookmarked page ${response.data.pageNumber} successfully!`);
-      // Refresh the list immediately
-      renderBookmarks();
-    }
-  });
 }
 
 /**
@@ -896,6 +1157,17 @@ function bindEventListeners() {
 
   // Q&A
   document.getElementById("btn-ask-question")?.addEventListener("click", handleAskQuestion);
+  document.getElementById("btn-copy-qa-answer")?.addEventListener("click", async () => {
+    const answerText = document.getElementById("qa-answer-text")?.innerText;
+    if (answerText) {
+      try {
+        await navigator.clipboard.writeText(answerText);
+        showToast("Answer copied to clipboard!");
+      } catch (_) {
+        showToast("Failed to copy answer", true);
+      }
+    }
+  });
   document.getElementById("qa-question-input")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();

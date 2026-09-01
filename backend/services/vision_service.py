@@ -1,11 +1,11 @@
 # services/vision_service.py
 import json
-from anthropic import APIError, APIConnectionError
-from services.llm_service import get_agentrouter_client, get_claude_model
+import os
+from services.llm_service import get_groq_client
 
 def analyze_image(image_base64: str, image_format: str = "jpeg", prompt: str = None) -> dict:
     """
-    Generates a structured explanation of an image using Claude Vision.
+    Generates a structured explanation of an image using Groq Vision.
     
     Args:
         image_base64 (str): The base64 encoded image string.
@@ -19,8 +19,8 @@ def analyze_image(image_base64: str, image_format: str = "jpeg", prompt: str = N
         raise ValueError("No image provided.")
         
     try:
-        client = get_agentrouter_client()
-        model_name = get_claude_model()
+        client = get_groq_client()
+        model_name = os.getenv("GROQ_VISION_MODEL", "llama-3.2-11b-vision-preview")
         
         system_instruction = (
             "You are an expert at analyzing images, diagrams, charts, and figures found in PDF documents. "
@@ -43,23 +43,24 @@ def analyze_image(image_base64: str, image_format: str = "jpeg", prompt: str = N
         if prompt:
             user_text += f" Additional context/question from user: {prompt}"
             
-        print("=== EXPLAINING IMAGE ===")
+        try:
+            print("=== EXPLAINING IMAGE VIA GROQ VISION ===")
+        except Exception:
+            pass
         
-        response = client.messages.create(
+        response = client.chat.completions.create(
             model=model_name,
             max_tokens=2048,
             temperature=0.2,
-            system=system_instruction,
             messages=[
+                {"role": "system", "content": system_instruction},
                 {
                     "role": "user",
                     "content": [
                         {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": f"image/{image_format.lower()}",
-                                "data": image_base64
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{image_format.lower()};base64,{image_base64}"
                             }
                         },
                         {
@@ -71,14 +72,11 @@ def analyze_image(image_base64: str, image_format: str = "jpeg", prompt: str = N
             ]
         )
         
-        final_text = ""
-        for block in response.content:
-            if getattr(block, "type", "") == "text":
-                final_text += block.text
+        final_text = response.choices[0].message.content or ""
                 
         # Parse the JSON response
         try:
-            # Clean up the response in case Claude added markdown code blocks
+            # Clean up the response in case LLM added markdown code blocks
             clean_json = final_text.strip()
             if clean_json.startswith("```json"):
                 clean_json = clean_json[7:]
@@ -90,13 +88,9 @@ def analyze_image(image_base64: str, image_format: str = "jpeg", prompt: str = N
             result_dict = json.loads(clean_json.strip())
             print("=== IMAGE EXPLANATION GENERATED SUCCESSFULLY ===")
             return result_dict
-        except json.JSONDecodeError as e:
-            print(f"Failed to parse JSON from Claude: {final_text}")
+        except json.JSONDecodeError:
+            print(f"Failed to parse JSON from Groq Vision: {final_text}")
             raise Exception("AI did not return valid JSON.")
             
-    except APIConnectionError as e:
-        raise Exception(f"Failed to connect to AgentRouter API for vision: {str(e)}")
-    except APIError as e:
-        raise Exception(f"AgentRouter API returned an error for vision: {str(e)}")
     except Exception as e:
-        raise Exception(f"An unexpected error occurred during analyze_image: {str(e)}")
+        raise Exception(f"An unexpected error occurred during analyze_image via Groq: {str(e)}")

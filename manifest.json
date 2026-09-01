@@ -11,7 +11,6 @@
     "128": "assets/icons/icons128.jpg"
   },
   "action": {
-    "default_popup": "popup/popup.html",
     "default_title": "AI PDF Assistant",
     "default_icon": {
       "16": "assets/icons/icons16.jpg",
@@ -19,6 +18,9 @@
       "48": "assets/icons/icons48.jpg",
       "128": "assets/icons/icons128.jpg"
     }
+  },
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
   },
   "options_ui": {
     "page": "options/options.html",
@@ -32,7 +34,8 @@
     "activeTab",
     "scripting",
     "tabs",
-    "downloads"
+    "downloads",
+    "sidePanel"
   ],
   "host_permissions": [
     "file:///*",

@@ -2,14 +2,56 @@
 import fitz  # PyMuPDF
 import base64
 import uuid
+import io
+import hashlib
+from PIL import Image, ImageStat
 
 # Global in-memory store for images. 
 # Maps image_id (str) to a dict containing {"base64_data": str, "format": str, "bytes": bytes}
 IMAGE_STORE = {}
 
+def is_valid_content_image(image_bytes: bytes, width: int, height: int) -> bool:
+    """
+    Filters out raw 1px solid black/white boxes, 1x1 bullet dots, and blank masks,
+    while accurately keeping all real images, charts, diagrams, logos, and figures.
+    """
+    # 1. Minimum dimensions (filters 1x1 pixels, thin 1px lines, tiny bullet dots)
+    if width < 25 or height < 25 or (width * height) < 600:
+        return False
+        
+    # 2. Extreme aspect ratio filter (e.g. 1px line separators spanning whole page)
+    aspect_ratio = max(width, height) / max(min(width, height), 1)
+    if aspect_ratio > 15.0:
+        return False
+        
+    try:
+        # 3. Analyze pixels with PIL
+        img = Image.open(io.BytesIO(image_bytes))
+        rgb_img = img.convert("RGB")
+        
+        # Check extrema (min, max per RGB channel)
+        extrema = rgb_img.getextrema()
+        # If R_min == R_max and G_min == G_max and B_min == B_max, it's a solid 100% single-color box
+        if all(c[0] == c[1] for c in extrema):
+            return False
+            
+        # Check standard deviation of color channels
+        stat = ImageStat.Stat(rgb_img)
+        # Low variance across channels (< 0.2) indicates a completely solid blank mask/overlay
+        if max(stat.stddev) < 0.2:
+            return False
+
+        return True
+    except Exception as e:
+        print(f"Image validation warning: {e}")
+        # Default to True on warning so real images are never lost
+        return True
+
+
 def extract_and_store_images(file_bytes: bytes) -> list[dict]:
     """
-    Extracts all images from a PDF file using PyMuPDF and stores them in IMAGE_STORE.
+    Extracts high-quality content images from a PDF file using PyMuPDF and stores them in IMAGE_STORE.
+    Clears IMAGE_STORE on every new document upload to avoid showing old PDF images.
     
     Args:
         file_bytes (bytes): The raw bytes of the uploaded PDF file.
@@ -18,6 +60,9 @@ def extract_and_store_images(file_bytes: bytes) -> list[dict]:
         list[dict]: A list of dictionaries containing image metadata (image_id, page, format).
     """
     try:
+        # Clear previous session's images so old PDF images aren't returned!
+        IMAGE_STORE.clear()
+        
         extracted_images = []
         
         # Open PDF from bytes
@@ -28,13 +73,35 @@ def extract_and_store_images(file_bytes: bytes) -> list[dict]:
             
             # get_images() returns a list of image instances on the page
             images = page.get_images(full=True)
+            page_seen_hashes = set()
             
             for img_index, img in enumerate(images):
                 xref = img[0]
-                # Extract image bytes and extension
-                base_image = doc.extract_image(xref)
+                
+                # Extract image bytes and dimensions
+                try:
+                    base_image = doc.extract_image(xref)
+                except Exception:
+                    continue
+
+                if not base_image or "image" not in base_image:
+                    continue
+
                 image_bytes = base_image["image"]
-                image_ext = base_image["ext"]
+                image_ext = base_image.get("ext", "png")
+                width = base_image.get("width", 0)
+                height = base_image.get("height", 0)
+                
+                # Skip duplicate images on the exact same page
+                img_hash = hashlib.md5(image_bytes).hexdigest()
+                if img_hash in page_seen_hashes:
+                    continue
+                
+                # Filter out non-content images (1px line separators, blank masks)
+                if not is_valid_content_image(image_bytes, width, height):
+                    continue
+                    
+                page_seen_hashes.add(img_hash)
                 
                 # Convert image bytes to base64
                 image_base64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -52,7 +119,7 @@ def extract_and_store_images(file_bytes: bytes) -> list[dict]:
                 extracted_images.append({
                     "image_id": image_id,
                     "page": page_num + 1,
-                    "image_index": img_index + 1,
+                    "image_index": len(page_seen_hashes),
                     "format": image_ext
                 })
                 
@@ -61,7 +128,6 @@ def extract_and_store_images(file_bytes: bytes) -> list[dict]:
         
     except Exception as e:
         print(f"Failed to extract images from PDF: {str(e)}")
-        # Don't fail the whole PDF upload if image extraction fails, just return empty list
         return []
 
 def get_image(image_id: str) -> dict:
@@ -92,3 +158,4 @@ def get_image_base64(image_id: str) -> dict:
             "format": IMAGE_STORE[image_id]["format"]
         }
     return None
+

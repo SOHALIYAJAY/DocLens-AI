@@ -3,7 +3,7 @@ from typing import List
 from services.embedding_service import generate_embeddings
 from services.vector_service import search_knowledge_base
 
-def retrieve_relevant_chunks(query: str, top_k: int = 8, max_distance: float = 1.5) -> List[str]:
+def retrieve_relevant_chunks(query: str, top_k: int = 6, max_distance: float = 1.5) -> List[str]:
     """
     Retrieves the most relevant text chunks for a given query.
     Filters out chunks that are too far in distance (irrelevant).

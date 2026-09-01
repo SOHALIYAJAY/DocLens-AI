@@ -229,24 +229,20 @@ ul {
 }
 
 /* --------------------------------------------------------------------------
-   Section 2: Navigation
+   Section 2: Navigation Dropdown Menu
    -------------------------------------------------------------------------- */
-.sidepanel-nav {
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--color-border);
-  background: rgba(15, 23, 42, 0.6);
+.btn-menu-dropdown:hover {
+  background: rgba(51, 65, 85, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
 }
 
-.nav-list {
-  display: flex;
-  gap: 4px;
-  padding: 8px 12px;
-  overflow-x: auto;
-  scrollbar-width: none;
+.nav-menu-option:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
 }
 
-.nav-list::-webkit-scrollbar {
-  display: none;
+.nav-menu-option.active {
+  background: rgba(59, 130, 246, 0.15) !important;
+  font-weight: 600 !important;
 }
 
 .nav-item {

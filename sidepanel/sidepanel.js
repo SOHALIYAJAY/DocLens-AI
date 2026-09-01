@@ -201,7 +201,6 @@ function navigateToSection(sectionId) {
   const SECTION_MAP = {
     chat: { label: "AI Chat", icon: "fa-comments", color: "#3b82f6" },
     summary: { label: "PDF Summary", icon: "fa-wand-magic-sparkles", color: "#a855f7" },
-    qa: { label: "Q&A", icon: "fa-circle-question", color: "#06b6d4" },
     images: { label: "Images", icon: "fa-image", color: "#f59e0b" },
     bookmarks: { label: "Bookmarks", icon: "fa-bookmark", color: "#ec4899" },
   };
@@ -959,65 +958,6 @@ function handleExportSummary() {
   logAction("Exported summary to TXT");
 }
 
-async function handleAskQuestion() {
-  const input = document.getElementById("qa-question-input");
-  const btn = document.getElementById("btn-ask-question");
-  const answerCard = document.getElementById("qa-answer-card");
-  const loadingIndicator = document.getElementById("qa-loading-indicator");
-  const answerText = document.getElementById("qa-answer-text");
-
-  const question = input?.value.trim();
-
-  if (!question) {
-    showToast("Please enter a question about your PDF.", true);
-    return;
-  }
-
-  logAction("Ask Question triggered", { question });
-
-  if (answerCard) answerCard.style.display = "block";
-  if (loadingIndicator) loadingIndicator.style.display = "flex";
-  if (answerText) answerText.innerHTML = "";
-  if (btn) btn.disabled = true;
-
-  try {
-    const response = await new Promise((resolve) => {
-      chrome.runtime.sendMessage({
-        action: "CHAT_WITH_PDF",
-        payload: { question }
-      }, (res) => {
-        if (chrome.runtime.lastError) {
-          resolve({ success: false, error: chrome.runtime.lastError.message });
-        } else {
-          resolve(res || { success: false, error: "No response from extension background." });
-        }
-      });
-    });
-
-    if (loadingIndicator) loadingIndicator.style.display = "none";
-    if (btn) btn.disabled = false;
-
-    if (!response || response.success === false) {
-      if (answerText) {
-        answerText.innerHTML = "Sorry, we not found answer in this time.";
-      }
-    } else {
-      const answerData = response.data || response;
-      const answer = answerData.answer || response.answer || "Sorry, we not found answer in this time.";
-      if (answerText) {
-        answerText.innerHTML = formatMarkdown(answer);
-      }
-      logAction("Question answered successfully");
-    }
-  } catch (err) {
-    if (loadingIndicator) loadingIndicator.style.display = "none";
-    if (btn) btn.disabled = false;
-    if (answerText) {
-      answerText.innerHTML = "Sorry, we not found answer in this time.";
-    }
-  }
-}
-
 
 function handleAddNote() {
   logAction("Add note clicked");
@@ -1153,26 +1093,6 @@ function bindEventListeners() {
   
   document.querySelectorAll(".copy-btn").forEach(btn => {
     btn.addEventListener("click", handleCopySummary);
-  });
-
-  // Q&A
-  document.getElementById("btn-ask-question")?.addEventListener("click", handleAskQuestion);
-  document.getElementById("btn-copy-qa-answer")?.addEventListener("click", async () => {
-    const answerText = document.getElementById("qa-answer-text")?.innerText;
-    if (answerText) {
-      try {
-        await navigator.clipboard.writeText(answerText);
-        showToast("Answer copied to clipboard!");
-      } catch (_) {
-        showToast("Failed to copy answer", true);
-      }
-    }
-  });
-  document.getElementById("qa-question-input")?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      handleAskQuestion();
-    }
   });
 
 

@@ -46,10 +46,6 @@
               <i class="fa-solid fa-wand-magic-sparkles" style="width: 16px; text-align: center; color: #a855f7;"></i>
               <span>PDF Summary</span>
             </button>
-            <button type="button" class="nav-menu-option" data-section="qa" style="width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: none; background: transparent; color: var(--color-text); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; text-align: left;">
-              <i class="fa-solid fa-circle-question" style="width: 16px; text-align: center; color: #06b6d4;"></i>
-              <span>Q&amp;A</span>
-            </button>
             <button type="button" class="nav-menu-option" data-section="images" style="width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: none; background: transparent; color: var(--color-text); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; text-align: left;">
               <i class="fa-solid fa-image" style="width: 16px; text-align: center; color: #f59e0b;"></i>
               <span>Images</span>
@@ -191,55 +187,6 @@
             <p class="card-body" id="executive-summary">
               This PDF introduces core machine learning principles for beginners, covering data preprocessing, model training, and real-world applications across industries.
             </p>
-          </article>
-        </section>
-
-        <!-- Section 3: Question & Answer -->
-        <section
-          class="panel-section"
-          id="section-qa"
-          data-section="qa"
-          aria-labelledby="nav-qa"
-          hidden
-        >
-          <div class="section-heading">
-            <h2 class="section-title">Question &amp; Answer</h2>
-            <p class="section-desc">Get precise answers from your PDF</p>
-          </div>
-
-          <div class="input-group" style="display: flex; gap: 8px; margin-bottom: 16px;">
-            <input
-              type="text"
-              id="qa-question-input"
-              class="text-input"
-              placeholder="Ask a question about this PDF..."
-              aria-label="Question input"
-              style="flex: 1; height: 38px; font-size: 13px; border-radius: var(--radius-md);"
-            />
-            <button type="button" class="btn btn-primary" id="btn-ask-question" style="height: 38px; padding: 0 16px; font-weight: 600;">
-              <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
-              Ask
-            </button>
-          </div>
-
-          <article class="glass-card answer-card" id="qa-answer-card" style="display: none; padding: 14px; border-radius: var(--radius-md); background: rgba(30, 41, 59, 0.5); border: 1px solid var(--color-border);">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px;">
-              <h3 class="card-heading" style="margin: 0; font-size: 13px; font-weight: 600; color: var(--color-primary); display: flex; align-items: center; gap: 6px;">
-                <i class="fa-solid fa-lightbulb"></i>
-                <span>Answer</span>
-              </h3>
-              <button type="button" class="btn-icon" id="btn-copy-qa-answer" title="Copy answer" style="width: 26px; height: 26px;">
-                <i class="fa-solid fa-copy"></i>
-              </button>
-            </div>
-            
-            <div id="qa-loading-indicator" style="display: none; align-items: center; gap: 8px; color: #3b82f6; padding: 8px 0; font-size: 12px;">
-              <i class="fa-solid fa-spinner fa-spin"></i>
-              <span>Searching PDF &amp; generating answer...</span>
-            </div>
-            
-            <div class="card-body" id="qa-answer-text" style="font-size: 13px; line-height: 1.6; color: var(--color-text);">
-            </div>
           </article>
         </section>
 

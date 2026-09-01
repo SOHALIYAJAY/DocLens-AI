@@ -50,7 +50,7 @@ def is_valid_content_image(image_bytes: bytes, width: int, height: int) -> bool:
 
 def extract_and_store_images(file_bytes: bytes) -> list[dict]:
     """
-    Extracts high-quality content images from a PDF file using PyMuPDF and stores them in IMAGE_STORE.
+    Extracts high-quality content images AND vector diagrams/figures from a PDF file using PyMuPDF.
     Clears IMAGE_STORE on every new document upload to avoid showing old PDF images.
     
     Args:
@@ -71,7 +71,7 @@ def extract_and_store_images(file_bytes: bytes) -> list[dict]:
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
             
-            # get_images() returns a list of image instances on the page
+            # 1. Extract embedded raster images (JPEG, PNG, etc.)
             images = page.get_images(full=True)
             page_seen_hashes = set()
             
@@ -122,6 +122,36 @@ def extract_and_store_images(file_bytes: bytes) -> list[dict]:
                     "image_index": len(page_seen_hashes),
                     "format": image_ext
                 })
+
+            # 2. Extract non-image vector diagrams, flowcharts, & drawn figures
+            # If a page contains vector drawings (shapes, lines, curves, block diagrams) but no embedded images:
+            try:
+                drawings = page.get_drawings()
+                if len(images) == 0 and len(drawings) >= 3:
+                    pix = page.get_pixmap(dpi=150)
+                    diagram_bytes = pix.tobytes("png")
+                    width, height = pix.width, pix.height
+                    
+                    diagram_hash = hashlib.md5(diagram_bytes).hexdigest()
+                    if diagram_hash not in page_seen_hashes and is_valid_content_image(diagram_bytes, width, height):
+                        page_seen_hashes.add(diagram_hash)
+                        diagram_base64 = base64.b64encode(diagram_bytes).decode("utf-8")
+                        image_id = str(uuid.uuid4())
+                        
+                        IMAGE_STORE[image_id] = {
+                            "base64_data": diagram_base64,
+                            "format": "png",
+                            "bytes": diagram_bytes
+                        }
+                        
+                        extracted_images.append({
+                            "image_id": image_id,
+                            "page": page_num + 1,
+                            "image_index": len(page_seen_hashes),
+                            "format": "png"
+                        })
+            except Exception as ve:
+                print(f"Vector diagram extraction warning on page {page_num + 1}: {ve}")
                 
         doc.close()
         return extracted_images

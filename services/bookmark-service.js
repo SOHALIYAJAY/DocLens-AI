@@ -99,13 +99,14 @@ class BookmarkService {
   }
 
   /**
-   * Updates an existing bookmark's title.
+   * Updates an existing bookmark's title and page number.
    * 
    * @param {string} bookmarkId 
    * @param {string} newTitle 
+   * @param {number|string|null} [newPageNumber=null]
    * @returns {Promise<Object>} Updated bookmark
    */
-  static async updateBookmark(bookmarkId, newTitle) {
+  static async updateBookmark(bookmarkId, newTitle, newPageNumber = null) {
     if (!bookmarkId) throw new Error("Bookmark ID is required.");
     if (!newTitle || !newTitle.trim()) throw new Error("Bookmark title cannot be empty.");
 
@@ -118,18 +119,22 @@ class BookmarkService {
     }
 
     const existing = allBookmarks[index];
+    const pageNum = newPageNumber !== null && newPageNumber !== undefined ? parseInt(newPageNumber, 10) : existing.pageNumber;
+    if (isNaN(pageNum) || pageNum < 1) throw new Error("Valid page number is required.");
+
     const duplicate = allBookmarks.find(b => 
       b.id !== bookmarkId &&
       this.normalizePdfId(b.pdfId) === this.normalizePdfId(existing.pdfId) &&
-      b.pageNumber === existing.pageNumber &&
+      b.pageNumber === pageNum &&
       b.title.toLowerCase() === cleanTitle.toLowerCase()
     );
 
     if (duplicate) {
-      throw new Error(`Another bookmark titled "${cleanTitle}" already exists for Page ${existing.pageNumber}.`);
+      throw new Error(`Another bookmark titled "${cleanTitle}" already exists for Page ${pageNum}.`);
     }
 
     allBookmarks[index].title = cleanTitle;
+    allBookmarks[index].pageNumber = pageNum;
     allBookmarks[index].updatedAt = new Date().toISOString();
 
     await chrome.storage.local.set({ [this.STORAGE_KEY]: allBookmarks });

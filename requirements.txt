@@ -3,9 +3,13 @@ uvicorn
 pydantic
 groq
 PyMuPDF
+pymupdf4llm
+Pillow
+reportlab
 sentence-transformers==2.5.1
 chromadb
 langchain-text-splitters
 python-multipart==0.0.9
 python-dotenv
 tiktoken
+requests

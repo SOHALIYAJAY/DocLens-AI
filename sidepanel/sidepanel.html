@@ -42,10 +42,6 @@
               <i class="fa-solid fa-comments" style="width: 16px; text-align: center; color: #3b82f6;"></i>
               <span>AI Chat</span>
             </button>
-            <button type="button" class="nav-menu-option" data-section="summary" style="width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: none; background: transparent; color: var(--color-text); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; text-align: left;">
-              <i class="fa-solid fa-wand-magic-sparkles" style="width: 16px; text-align: center; color: #a855f7;"></i>
-              <span>PDF Summary</span>
-            </button>
             <button type="button" class="nav-menu-option" data-section="images" style="width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: none; background: transparent; color: var(--color-text); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; text-align: left;">
               <i class="fa-solid fa-image" style="width: 16px; text-align: center; color: #f59e0b;"></i>
               <span>Images</span>
@@ -148,43 +144,7 @@
           </div>
         </section>
 
-        <!-- Section 2: PDF Summary -->
-        <section
-          class="panel-section"
-          id="section-summary"
-          data-section="summary"
-          aria-labelledby="nav-summary"
-          hidden
-        >
-          <div class="section-heading">
-            <h2 class="section-title">PDF Summary</h2>
-            <p class="section-desc">Generate AI-powered summaries</p>
-          </div>
 
-          <div class="summary-length-toggles">
-            <button type="button" class="btn btn-secondary length-toggle" data-length="short">Short</button>
-            <button type="button" class="btn btn-secondary length-toggle active" data-length="medium">Medium</button>
-            <button type="button" class="btn btn-secondary length-toggle" data-length="long">Long</button>
-          </div>
-
-          <button type="button" class="btn btn-primary btn-block" id="btn-generate-summary">
-            <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
-            Generate Summary
-          </button>
-
-          <article class="glass-card summary-block">
-            <h3 class="card-heading">
-              <i class="fa-solid fa-crown" aria-hidden="true"></i>
-              <span>Executive Summary</span>
-              <button type="button" class="btn-icon copy-btn" title="Copy text" data-target="executive-summary">
-                <i class="fa-solid fa-copy"></i>
-              </button>
-            </h3>
-            <p class="card-body" id="executive-summary">
-              This PDF introduces core machine learning principles for beginners, covering data preprocessing, model training, and real-world applications across industries.
-            </p>
-          </article>
-        </section>
 
         <!-- Section 4: Images & Architecture Diagrams -->
         <section

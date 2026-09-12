@@ -191,32 +191,7 @@ function handleChatPdfClick() {
   );
 }
 
-/** Starts PDF summarization using extracted text and specified length. */
-function handleSummarizePdfClick(length = "medium") {
-  logAction(`Summarize PDF (${length}) clicked`);
-  const extractedTextArea = document.getElementById("extracted-text-area");
-  const text = extractedTextArea ? extractedTextArea.innerText : "";
-  
-  if (!text || text.includes("Extracting text") || text.includes("Extracted text will appear here")) {
-    showPlaceholderAlert("Please click 'Extract Text from PDF' first, then try summarizing.");
-    return;
-  }
 
-  showLoading(`Generating ${length} summary...`);
-  logAction("Sending SUMMARIZE_PDF to background");
-
-  chrome.runtime.sendMessage(
-    { action: "SUMMARIZE_PDF", payload: { text, summary_type: length } },
-    (response) => {
-      logAction("Background received SUMMARIZE_PDF response", response);
-      if (chrome.runtime.lastError || !response || !response.success) {
-        showAiResponse("Failed to summarize: " + (chrome.runtime.lastError?.message || response?.error || "Unknown error"), true);
-      } else {
-        showAiResponse(response.data.summary || "No summary received.");
-      }
-    }
-  );
-}
 
 /** Opens the ask-questions flow (same as Chat for popup). */
 function handleAskQuestionsClick() {
@@ -231,6 +206,13 @@ function handleBookmarkPdfClick() {
   const formSection = document.getElementById("popup-bookmark-section");
   const pageInput = document.getElementById("popup-bookmark-page-input");
   const titleInput = document.getElementById("popup-bookmark-title-input");
+
+  const editIdInput = document.getElementById("popup-bookmark-edit-id");
+  const heading = document.getElementById("popup-bookmark-heading");
+  const saveBtn = document.getElementById("btn-save-popup-bookmark");
+  if (editIdInput) editIdInput.value = "";
+  if (heading) heading.textContent = "Add PDF Bookmark";
+  if (saveBtn) saveBtn.textContent = "Save Bookmark";
 
   if (!formSection || !pageInput || !titleInput) return;
 
@@ -265,15 +247,19 @@ function handleBookmarkPdfClick() {
 
 function handleClosePopupBookmark() {
   const formSection = document.getElementById("popup-bookmark-section");
+  const editIdInput = document.getElementById("popup-bookmark-edit-id");
+  if (editIdInput) editIdInput.value = "";
   if (formSection) formSection.style.display = "none";
 }
 
 function handleSavePopupBookmark() {
   const pageInput = document.getElementById("popup-bookmark-page-input");
   const titleInput = document.getElementById("popup-bookmark-title-input");
+  const editIdInput = document.getElementById("popup-bookmark-edit-id");
 
   const pageNumber = pageInput ? parseInt(pageInput.value, 10) : 1;
   const title = titleInput ? titleInput.value.trim() : "";
+  const editId = editIdInput ? editIdInput.value : "";
 
   if (isNaN(pageNumber) || pageNumber < 1) {
     showPlaceholderAlert("Please enter a valid Page Number (1 or greater).");
@@ -281,6 +267,38 @@ function handleSavePopupBookmark() {
   }
   if (!title) {
     showPlaceholderAlert("Please enter a Bookmark Title.");
+    return;
+  }
+
+  if (editId) {
+    if (typeof BookmarkService !== "undefined") {
+      BookmarkService.updateBookmark(editId, title, pageNumber).then(() => {
+        showPlaceholderAlert(`✏️ Bookmark updated to "${title}" (Page ${pageNumber}) successfully!`);
+        handleClosePopupBookmark();
+        const section = document.getElementById("popup-bookmarks-list-section");
+        if (section && section.style.display !== "none") {
+          renderPopupBookmarks();
+        }
+      }).catch(err => {
+        showPlaceholderAlert("Failed to update bookmark: " + err.message);
+      });
+    } else {
+      chrome.runtime.sendMessage({
+        action: "UPDATE_BOOKMARK",
+        payload: { bookmarkId: editId, title, pageNumber }
+      }, (res) => {
+        if (chrome.runtime.lastError || (res && res.success === false)) {
+          showPlaceholderAlert("Failed to update bookmark: " + (chrome.runtime.lastError?.message || res?.error));
+        } else {
+          showPlaceholderAlert(`✏️ Bookmark updated to "${title}" (Page ${pageNumber}) successfully!`);
+          handleClosePopupBookmark();
+          const section = document.getElementById("popup-bookmarks-list-section");
+          if (section && section.style.display !== "none") {
+            renderPopupBookmarks();
+          }
+        }
+      });
+    }
     return;
   }
 
@@ -311,6 +329,30 @@ function handleSavePopupBookmark() {
       }
     });
   });
+}
+
+function openPopupBookmarkEditForm(bm) {
+  const formSection = document.getElementById("popup-bookmark-section");
+  const editIdInput = document.getElementById("popup-bookmark-edit-id");
+  const pageInput = document.getElementById("popup-bookmark-page-input");
+  const titleInput = document.getElementById("popup-bookmark-title-input");
+  const heading = document.getElementById("popup-bookmark-heading");
+  const saveBtn = document.getElementById("btn-save-popup-bookmark");
+
+  if (!formSection || !pageInput || !titleInput) return;
+
+  if (editIdInput) editIdInput.value = bm.id;
+  if (heading) heading.textContent = "Edit PDF Bookmark";
+  if (saveBtn) saveBtn.textContent = "Update Bookmark";
+
+  pageInput.value = bm.pageNumber;
+  titleInput.value = bm.title;
+
+  formSection.style.display = "block";
+  setTimeout(() => {
+    titleInput.focus();
+    titleInput.select();
+  }, 50);
 }
 
 async function handleRefreshPopup() {
@@ -392,13 +434,37 @@ async function renderPopupBookmarks() {
           <button type="button" class="btn-jump-bm" style="background: none; border: none; color: #10a37f; cursor: pointer; padding: 4px;" title="Jump to page">
             <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 11px;"></i>
           </button>
+          <button type="button" class="btn-edit-bm" style="background: none; border: none; color: #3b82f6; cursor: pointer; padding: 4px;" title="Edit bookmark">
+            <i class="fa-solid fa-pen" style="font-size: 11px;"></i>
+          </button>
           <button type="button" class="btn-delete-bm" style="background: none; border: none; color: #ef4444; cursor: pointer; padding: 4px;" title="Delete bookmark">
             <i class="fa-solid fa-trash" style="font-size: 11px;"></i>
           </button>
         </div>
       `;
 
-      const jumpAction = async (e) => {
+      const openInNewTabAction = async (e) => {
+        if (e) e.stopPropagation();
+        try {
+          const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+          const activeTab = tabs[0];
+          let pdfUrl = bm.pdfId || (activeTab ? activeTab.url : null);
+          if (pdfUrl) {
+            let cleanUrl = pdfUrl.split("#")[0];
+            const newUrl = bm.pageNumber ? `${cleanUrl}#page=${bm.pageNumber}` : cleanUrl;
+            chrome.tabs.create({ url: newUrl, active: true });
+          } else if (activeTab) {
+            chrome.tabs.sendMessage(activeTab.id, {
+              action: "JUMP_TO_PAGE",
+              pageNumber: bm.pageNumber
+            });
+          }
+        } catch (err) {
+          logAction("Failed to open in new tab from popup", err);
+        }
+      };
+
+      const jumpCurrentTabAction = async (e) => {
         if (e) e.stopPropagation();
         try {
           const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -407,8 +473,6 @@ async function renderPopupBookmarks() {
             chrome.tabs.sendMessage(activeTab.id, {
               action: "JUMP_TO_PAGE",
               pageNumber: bm.pageNumber
-            }, (res) => {
-              if (chrome.runtime.lastError) {}
             });
             if (bm.pdfId) {
               let cleanUrl = bm.pdfId.split("#")[0];
@@ -423,8 +487,17 @@ async function renderPopupBookmarks() {
         }
       };
 
-      li.addEventListener("click", jumpAction);
-      li.querySelector(".btn-jump-bm").addEventListener("click", jumpAction);
+      li.addEventListener("click", jumpCurrentTabAction);
+      const jumpBtn = li.querySelector(".btn-jump-bm");
+      if (jumpBtn) {
+        jumpBtn.title = `Open in new tab at Page ${bm.pageNumber}`;
+        jumpBtn.addEventListener("click", openInNewTabAction);
+      }
+
+      li.querySelector(".btn-edit-bm").addEventListener("click", (e) => {
+        e.stopPropagation();
+        openPopupBookmarkEditForm(bm);
+      });
 
       li.querySelector(".btn-delete-bm").addEventListener("click", async (e) => {
         e.stopPropagation();
@@ -580,9 +653,6 @@ function bindEventListeners() {
 
   // Quick Actions
   document.getElementById("btn-chat-pdf")?.addEventListener("click", handleChatPdfClick);
-  document.getElementById("btn-sum-s")?.addEventListener("click", () => handleSummarizePdfClick("small"));
-  document.getElementById("btn-sum-m")?.addEventListener("click", () => handleSummarizePdfClick("medium"));
-  document.getElementById("btn-sum-l")?.addEventListener("click", () => handleSummarizePdfClick("large"));
   document
     .getElementById("btn-ask-questions")
     ?.addEventListener("click", handleAskQuestionsClick);
@@ -617,14 +687,18 @@ function initPopup() {
 
   logAction("Popup initialized");
 
-  // Load previously extracted text & images from storage if available
+  // Purge any legacy status message from storage
   chrome.storage.local.get(["lastExtractedText", "lastExtractedImages"], (stored) => {
     if (stored.lastExtractedText) {
-      const section = document.getElementById("extracted-text-section");
-      const textArea = document.getElementById("extracted-text-area");
-      if (section && textArea) {
-        section.style.display = "block";
-        textArea.innerHTML = `<p>${stored.lastExtractedText}</p>`;
+      if (stored.lastExtractedText.includes("via backend upload") || stored.lastExtractedText.includes("chunks") || stored.lastExtractedText.includes("Extracted")) {
+        chrome.storage.local.remove(["lastExtractedText"]);
+      } else if (stored.lastExtractedText.trim() !== "") {
+        const section = document.getElementById("extracted-text-section");
+        const textArea = document.getElementById("extracted-text-area");
+        if (section && textArea) {
+          section.style.display = "block";
+          textArea.innerHTML = `<p>${stored.lastExtractedText}</p>`;
+        }
       }
     }
     if (stored.lastExtractedImages) {
@@ -642,27 +716,26 @@ function initPopup() {
       const textArea = document.getElementById("extracted-text-area");
       
       if (section && textArea) {
-        section.style.display = "block";
         if (message.success) {
-          // Format as key points (bullet list) by splitting newlines
-          const points = message.text.split('\n').filter(p => p.trim().length > 0);
-          if (points.length === 1 && points[0].includes("via backend upload")) {
-             textArea.innerHTML = `<p>${points[0]}</p>`;
+          if (!message.text || message.text.trim() === "" || message.text.includes("via backend upload") || message.text.includes("chunks") || message.text.includes("Extracted")) {
+            section.style.display = "none";
           } else {
-             const ul = document.createElement("ul");
-             ul.style.listStyleType = "disc";
-             ul.style.paddingLeft = "20px";
-             points.forEach(point => {
-               const li = document.createElement("li");
-               li.style.marginBottom = "8px";
-               li.textContent = point.trim();
-               ul.appendChild(li);
-             });
-             textArea.innerHTML = "";
-             textArea.appendChild(ul);
+            section.style.display = "block";
+            const points = message.text.split('\n').filter(p => p.trim().length > 0);
+            const ul = document.createElement("ul");
+            ul.style.listStyleType = "disc";
+            ul.style.paddingLeft = "20px";
+            points.forEach(point => {
+              const li = document.createElement("li");
+              li.style.marginBottom = "8px";
+              li.textContent = point.trim();
+              ul.appendChild(li);
+            });
+            textArea.innerHTML = "";
+            textArea.appendChild(ul);
           }
         } else {
-          textArea.innerHTML = `<span style="color: #ef4444;">Error: ${message.error}</span>`;
+          section.style.display = "none";
         }
       }
 
@@ -699,7 +772,22 @@ function renderPopupExtractedImages(images) {
 
     const meta = document.createElement("div");
     meta.style = "display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--color-text-muted);";
-    meta.innerHTML = `<span>Page ${img.page}</span>`;
+    meta.innerHTML = `
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span>Page ${img.page}</span>
+        <button type="button" class="btn-img-open-tab" title="Open in new tab at Page ${img.page}" style="background:none; border:none; color:#10a37f; cursor:pointer; padding:2px 4px;">
+          <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 11px;"></i>
+        </button>
+      </div>
+    `;
+    meta.querySelector(".btn-img-open-tab")?.addEventListener("click", async () => {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs[0] && tabs[0].url) {
+        let cleanUrl = tabs[0].url.split("#")[0];
+        const newUrl = `${cleanUrl}#page=${img.page}`;
+        chrome.tabs.create({ url: newUrl, active: true });
+      }
+    });
 
     const explainBtn = document.createElement("button");
     explainBtn.className = "btn btn-secondary";

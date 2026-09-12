@@ -218,7 +218,12 @@ function createAccordionGroup(sectionData) {
     itemEl.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; width:100%; color:var(--color-text); font-size: 12px; font-weight: 500;">
         <span>${item.title}</span>
-        <span style="font-size: 10px; color:var(--color-primary); background: rgba(6,182,212,0.1); padding: 2px 6px; border-radius: 4px;">P.${item.page}</span>
+        <div style="display:flex; align-items:center; gap:4px;">
+          <span style="font-size: 10px; color:var(--color-primary); background: rgba(6,182,212,0.1); padding: 2px 6px; border-radius: 4px;">P.${item.page}</span>
+          <button type="button" class="btn-nav-open-new-tab" title="Open in new tab at Page ${item.page}" style="background:none; border:none; color:var(--color-primary, #3b82f6); cursor:pointer; padding:2px 4px; border-radius:4px; display:inline-flex; align-items:center;">
+            <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 10px;"></i>
+          </button>
+        </div>
       </div>
       ${item.description ? `<div style="font-size: 11px; color:var(--color-text-muted); margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.description}</div>` : ""}
     `;
@@ -229,9 +234,19 @@ function createAccordionGroup(sectionData) {
     itemEl.addEventListener("mouseleave", () => {
       itemEl.style.background = "transparent";
     });
+
+    itemEl.querySelector(".btn-nav-open-new-tab")?.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs[0] && tabs[0].url) {
+        let cleanUrl = tabs[0].url.split("#")[0];
+        const newUrl = `${cleanUrl}#page=${item.page}`;
+        chrome.tabs.create({ url: newUrl, active: true });
+      }
+    });
     
     itemEl.addEventListener("click", async () => {
-      // Jump and highlight
+      // Jump and highlight in current tab
       const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
       if (tabs[0]) {
         chrome.tabs.sendMessage(tabs[0].id, {

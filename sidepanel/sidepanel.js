@@ -20,7 +20,7 @@ const APP_DATA = {
 };
 
 const SUGGESTED_QUESTIONS = [
-  "Summarize chapter 3",
+  "What are the key points?",
   "What is gradient descent?",
   "List key terms",
   "Explain neural networks",
@@ -200,7 +200,6 @@ function navigateToSection(sectionId) {
   // Update dropdown button label and icon
   const SECTION_MAP = {
     chat: { label: "AI Chat", icon: "fa-comments", color: "#3b82f6" },
-    summary: { label: "PDF Summary", icon: "fa-wand-magic-sparkles", color: "#a855f7" },
     images: { label: "Images", icon: "fa-image", color: "#f59e0b" },
     bookmarks: { label: "Bookmarks", icon: "fa-bookmark", color: "#ec4899" },
   };
@@ -439,12 +438,12 @@ async function handleSaveBookmarkModal() {
 
     if (currentModalMode === "edit") {
       if (typeof BookmarkService !== "undefined") {
-        await BookmarkService.updateBookmark(bookmarkId, title);
+        await BookmarkService.updateBookmark(bookmarkId, title, pageNumber);
       } else {
         await new Promise((resolve, reject) => {
           chrome.runtime.sendMessage({
             action: "UPDATE_BOOKMARK",
-            payload: { bookmarkId, title }
+            payload: { bookmarkId, title, pageNumber }
           }, (res) => {
             if (chrome.runtime.lastError || !res || res.success === false) {
               reject(new Error(chrome.runtime.lastError?.message || res?.error || "Failed to update"));
@@ -482,12 +481,18 @@ async function handleSaveBookmarkModal() {
   }
 }
 
-async function jumpToBookmarkPage(bookmark) {
-  logAction("Navigating to bookmark", bookmark);
+async function jumpToBookmarkPage(bookmark, openInNewTab = true) {
+  logAction("Navigating to bookmark", { bookmark, openInNewTab });
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     const activeTab = tabs[0];
-    if (activeTab) {
+    let pdfUrl = bookmark.pdfId || (activeTab ? activeTab.url : null);
+
+    if (openInNewTab && pdfUrl) {
+      let cleanUrl = pdfUrl.split("#")[0];
+      const newUrl = `${cleanUrl}#page=${bookmark.pageNumber}`;
+      chrome.tabs.create({ url: newUrl, active: true });
+    } else if (activeTab) {
       chrome.tabs.sendMessage(activeTab.id, {
         action: "NAVIGATE_TO_PAGE",
         pageNumber: bookmark.pageNumber
@@ -497,8 +502,8 @@ async function jumpToBookmarkPage(bookmark) {
         }
       });
 
-      if (bookmark.pdfId) {
-        let cleanUrl = bookmark.pdfId.split("#")[0];
+      if (pdfUrl) {
+        let cleanUrl = pdfUrl.split("#")[0];
         const newUrl = `${cleanUrl}#page=${bookmark.pageNumber}`;
         if (activeTab.url !== newUrl) {
           chrome.tabs.update(activeTab.id, { url: newUrl });
@@ -616,12 +621,17 @@ async function renderBookmarks() {
       </div>
     `;
 
-    const jumpAction = () => jumpToBookmarkPage(bookmark);
-    card.querySelector(".bookmark-card-left").addEventListener("click", jumpAction);
-    card.querySelector(".btn-jump").addEventListener("click", (e) => {
-      e.stopPropagation();
-      jumpAction();
-    });
+    const jumpCurrentTabAction = () => jumpToBookmarkPage(bookmark, false);
+    const openNewTabAction = () => jumpToBookmarkPage(bookmark, true);
+    card.querySelector(".bookmark-card-left").addEventListener("click", jumpCurrentTabAction);
+    const btnJump = card.querySelector(".btn-jump");
+    if (btnJump) {
+      btnJump.title = `Open in new tab at Page ${bookmark.pageNumber}`;
+      btnJump.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openNewTabAction();
+      });
+    }
 
     card.querySelector(".btn-edit").addEventListener("click", (e) => {
       e.stopPropagation();
@@ -849,117 +859,7 @@ function demoTypingIndicator() {
    Event Handlers — Summary, Q&A, Search, Notes, Bookmarks
    ========================================================================== */
 
-let currentSummaryLength = "medium";
 
-function handleSummaryLengthToggle(event) {
-  const btn = event.currentTarget;
-  currentSummaryLength = btn.dataset.length;
-  
-  // Update active class
-  document.querySelectorAll(".length-toggle").forEach(el => el.classList.remove("active"));
-  btn.classList.add("active");
-  
-  logAction("Summary length changed", { length: currentSummaryLength });
-}
-
-async function handleGenerateSummary() {
-  logAction("Generate summary clicked", { length: currentSummaryLength });
-  
-  const generateBtn = document.getElementById("btn-generate-summary");
-  const summaryOutput = document.getElementById("executive-summary");
-  
-  if (!summaryOutput) return;
-
-  // Map length toggles: "short" -> "small", "long" -> "large"
-  let summaryType = currentSummaryLength;
-  if (summaryType === "short") summaryType = "small";
-  if (summaryType === "long") summaryType = "large";
-
-  // Visual loading state
-  if (generateBtn) {
-    generateBtn.disabled = true;
-    generateBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generating Summary...';
-  }
-
-  summaryOutput.innerHTML = `
-    <div style="display: flex; align-items: center; gap: 8px; color: var(--color-accent-teal, #20b2aa);">
-      <i class="fa-solid fa-circle-notch fa-spin"></i> 
-      Generating ${summaryType} summary via Groq AI...
-    </div>
-  `;
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      action: "SUMMARIZE_PDF",
-      payload: { summary_type: summaryType }
-    });
-
-    if (response && response.success && response.data) {
-      const summaryText = response.data.summary || response.data;
-      summaryOutput.innerHTML = formatMarkdown(summaryText);
-    } else {
-      const err = response?.error || "Failed to generate summary.";
-      summaryOutput.innerHTML = `<span style="color: #ff6b6b;">⚠️ ${escapeHtml(err)}</span>`;
-    }
-  } catch (error) {
-    summaryOutput.innerHTML = `<span style="color: #ff6b6b;">⚠️ Error: ${escapeHtml(error.message)}</span>`;
-  } finally {
-    if (generateBtn) {
-      generateBtn.disabled = false;
-      generateBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Generate Summary';
-    }
-  }
-}
-
-async function handleCopySummary(event) {
-  const btn = event.currentTarget;
-  const targetId = btn.dataset.target;
-  const textElement = document.getElementById(targetId);
-  
-  if (textElement) {
-    const textToCopy = textElement.innerText;
-    try {
-      await navigator.clipboard.writeText(textToCopy);
-      
-      // Visual feedback
-      const originalHtml = btn.innerHTML;
-      btn.innerHTML = '<i class="fa-solid fa-check"></i>';
-      btn.style.color = "var(--color-success)";
-      
-      setTimeout(() => {
-        btn.innerHTML = originalHtml;
-        btn.style.color = "";
-      }, 2000);
-      
-      logAction("Copied summary text", { targetId });
-    } catch (err) {
-      logAction("Failed to copy text", { error: err.message });
-      showAlert("Failed to copy text to clipboard.");
-    }
-  }
-}
-
-function handleExportSummary() {
-  const execSummary = document.getElementById("executive-summary")?.innerText || "";
-  const bulletSummary = document.getElementById("bullet-summary")?.innerText || "";
-  const pageSummary = document.getElementById("page-summary")?.innerText || "";
-  
-  const content = `AI PDF Assistant - Summary Export\n\n` +
-                  `Executive Summary:\n${execSummary}\n\n` +
-                  `Bullet Summary:\n${bulletSummary}\n\n` +
-                  `Current Page Summary:\n${pageSummary}\n`;
-                  
-  const blob = new Blob([content], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'pdf_summary.txt';
-  a.click();
-  
-  URL.revokeObjectURL(url);
-  logAction("Exported summary to TXT");
-}
 
 
 function handleAddNote() {
@@ -993,7 +893,22 @@ function renderExtractedImages(images) {
     
     const meta = document.createElement("div");
     meta.style = "display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; font-size: var(--text-xs); color: var(--text-secondary);";
-    meta.innerHTML = `<span>Page ${img.page}</span>`;
+    meta.innerHTML = `
+      <div style="display:flex; align-items:center; gap:6px;">
+        <span>Page ${img.page}</span>
+        <button type="button" class="btn-img-open-tab" title="Open in new tab at Page ${img.page}" style="background:none; border:none; color:var(--color-primary, #3b82f6); cursor:pointer; padding:2px 4px;">
+          <i class="fa-solid fa-arrow-up-right-from-square" style="font-size: 11px;"></i>
+        </button>
+      </div>
+    `;
+    meta.querySelector(".btn-img-open-tab")?.addEventListener("click", async () => {
+      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (tabs[0] && tabs[0].url) {
+        let cleanUrl = tabs[0].url.split("#")[0];
+        const newUrl = `${cleanUrl}#page=${img.page}`;
+        chrome.tabs.create({ url: newUrl, active: true });
+      }
+    });
     
     const explainBtn = document.createElement("button");
     explainBtn.className = "btn btn-secondary";
@@ -1094,17 +1009,7 @@ function bindEventListeners() {
     });
   }
 
-  // Summary
-  document.getElementById("btn-generate-summary")?.addEventListener("click", handleGenerateSummary);
-  document.getElementById("btn-export-summary")?.addEventListener("click", handleExportSummary);
-  
-  document.querySelectorAll(".length-toggle").forEach(btn => {
-    btn.addEventListener("click", handleSummaryLengthToggle);
-  });
-  
-  document.querySelectorAll(".copy-btn").forEach(btn => {
-    btn.addEventListener("click", handleCopySummary);
-  });
+
 
 
 async function handleRefreshSidebar(btnId = "btn-refresh-sidebar") {
@@ -1176,26 +1081,24 @@ async function handleRefreshSidebar(btnId = "btn-refresh-sidebar") {
       const btn = document.getElementById("btn-extract-pdf");
       if (btn) btn.disabled = false;
       if (statusArea) {
-        if (message.success) {
-          statusArea.style.display = "block";
-          statusArea.style.borderColor = "var(--color-success)";
-          statusArea.style.background = "rgba(34, 197, 94, 0.1)";
-          statusArea.textContent = message.text;
-          
-          if (message.images) {
-            renderExtractedImages(message.images);
-          }
-          
-          // Trigger AI Navigator generation
-          if (typeof fetchNavigator === "function") {
-            fetchNavigator();
-          }
-        } else {
-          statusArea.style.display = "block";
-          statusArea.style.borderColor = "#ef4444";
-          statusArea.style.background = "rgba(239, 68, 68, 0.1)";
-          statusArea.textContent = "Error: " + message.error;
+        statusArea.style.display = "none";
+        statusArea.textContent = "";
+      }
+      
+      if (message.success) {
+        if (message.images) {
+          renderExtractedImages(message.images);
         }
+        
+        // Trigger AI Navigator generation
+        if (typeof fetchNavigator === "function") {
+          fetchNavigator();
+        }
+      } else if (statusArea && message.error) {
+        statusArea.style.display = "block";
+        statusArea.style.borderColor = "#ef4444";
+        statusArea.style.background = "rgba(239, 68, 68, 0.1)";
+        statusArea.textContent = "Error: " + message.error;
       }
     }
   });

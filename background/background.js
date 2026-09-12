@@ -34,7 +34,6 @@ const MESSAGE_ACTIONS = {
   DOWNLOAD_NAVIGATOR_PDF: "DOWNLOAD_NAVIGATOR_PDF",
   GENERATE_NAVIGATOR: "GENERATE_NAVIGATOR",
   CHAT_WITH_PDF: "CHAT_WITH_PDF",
-  SUMMARIZE_PDF: "SUMMARIZE_PDF",
   ASK_QUESTION: "ASK_QUESTION",
   SEARCH_PDF: "SEARCH_PDF",
   GET_EXTENSION_STATUS: "GET_EXTENSION_STATUS",
@@ -441,29 +440,7 @@ async function handleChatWithPdf(payload) {
   }
 }
 
-/**
- * Handles summarize-PDF requests.
- */
-async function handleSummarizePdf(payload) {
-  logMessage("SUMMARIZE_PDF handled", { payload });
-  try {
-    const response = await fetch("http://127.0.0.1:8000/summarize", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pdf_text: payload.text || "", summary_type: payload.summary_type || "medium" }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Summarize failed: ${response.statusText}`);
-    }
-    
-    const result = await response.json();
-    return { ...result, action: MESSAGE_ACTIONS.SUMMARIZE_PDF };
-  } catch (error) {
-    logMessage("Error extracting images", { error: error.message });
-    throw error;
-  }
-}
+
 
 /**
  * Handles image vision analysis requests.
@@ -868,16 +845,15 @@ async function handleExtractPdfText(payload, sender) {
       }
       
       const result = await uploadRes.json();
-      const textMsg = `Extracted ${result.num_chunks} chunks via backend upload. You can now chat or summarize!`;
+      await chrome.storage.local.remove(["lastExtractedText"]);
       await chrome.storage.local.set({
-        lastExtractedText: textMsg,
         lastExtractedImages: result.images || []
       });
 
       chrome.runtime.sendMessage({ 
         action: "EXTRACTED_TEXT_RESULT", 
         success: true, 
-        text: textMsg,
+        text: "",
         images: result.images || [],
         error: null
       });
@@ -911,16 +887,15 @@ async function handleExtractPdfText(payload, sender) {
       }
       
       const result = await uploadRes.json();
-      const textMsg = `Extracted ${result.num_chunks} chunks via backend upload. You can now chat or summarize!`;
+      await chrome.storage.local.remove(["lastExtractedText"]);
       await chrome.storage.local.set({
-        lastExtractedText: textMsg,
         lastExtractedImages: result.images || []
       });
 
       chrome.runtime.sendMessage({ 
         action: "EXTRACTED_TEXT_RESULT", 
         success: true, 
-        text: textMsg,
+        text: "",
         images: result.images || [],
         error: null
       });
@@ -1042,7 +1017,7 @@ async function handleUpdateBookmark(payload, sender) {
   if (!payload || !payload.bookmarkId || !payload.title) {
     throw new Error("Missing bookmarkId or title in payload");
   }
-  const updated = await BookmarkService.updateBookmark(payload.bookmarkId, payload.title);
+  const updated = await BookmarkService.updateBookmark(payload.bookmarkId, payload.title, payload.pageNumber);
   logMessage("Updated bookmark", { bookmarkId: payload.bookmarkId });
   return updated;
 }
@@ -1106,7 +1081,6 @@ const MESSAGE_HANDLERS = {
   [MESSAGE_ACTIONS.DOWNLOAD_NAVIGATOR_PDF]: handleDownloadNavigatorPdf,
   [MESSAGE_ACTIONS.GENERATE_NAVIGATOR]: handleGenerateNavigator,
   [MESSAGE_ACTIONS.CHAT_WITH_PDF]: handleChatWithPdf,
-  [MESSAGE_ACTIONS.SUMMARIZE_PDF]: handleSummarizePdf,
   [MESSAGE_ACTIONS.ASK_QUESTION]: handleAskQuestion,
   [MESSAGE_ACTIONS.SEARCH_PDF]: handleSearchPdf,
   [MESSAGE_ACTIONS.GET_EXTENSION_STATUS]: handleGetExtensionStatus,

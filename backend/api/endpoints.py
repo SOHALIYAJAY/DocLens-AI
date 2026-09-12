@@ -7,12 +7,14 @@ import os
 import traceback
 from models.schemas import ChatRequest, ChatResponse, UploadResponse, SummaryRequest, SummaryResponse, LocalUploadRequest, ExplainImageRequest
 from services.llm_service import generate_response, generate_summary
-from services.pdf_service import extract_text_from_pdf
+from services.pdf_service import extract_text_from_pdf, generate_document_id
 from services.image_service import extract_and_store_images, get_image_base64
 from services.vision_service import analyze_image
-from services.chunk_service import chunk_text
+from services.chunk_service import chunk_text, chunk_pages_with_metadata
 from services.embedding_service import generate_embeddings
 from services.vector_service import add_to_knowledge_base, clear_knowledge_base, get_all_chunks
+from services.bm25_service import bm25_service
+from services.context_expansion_service import context_expansion_service
 from services.retriever_service import retrieve_relevant_chunks
 from services.navigator_service import generate_navigator
 from models.schemas import NavigatorResponse
@@ -38,13 +40,19 @@ async def upload_pdf(file: UploadFile = File(...)):
         if not pdf_pages:
             raise HTTPException(status_code=400, detail="Could not extract text from PDF")
             
-        # 3. Chunk text (returns List[Dict])
-        chunks = chunk_text(pdf_pages)
+        # 3. Chunk text with document & page metadata
+        doc_id = generate_document_id(file_bytes, file.filename)
+        chunks = chunk_pages_with_metadata(pdf_pages, document_id=doc_id, document_name=file.filename)
         
-        # 4. Store in vector database (we clear previous KB to act as a single-document QA for now)
-        # ChromaDB will automatically handle embeddings via our MiniLMEmbeddingFunction
+        # 4. Store in vector database, BM25 index & context expansion store
         clear_knowledge_base()
         add_to_knowledge_base(chunks)
+        
+        bm25_service.clear_index()
+        bm25_service.add_documents(chunks)
+        
+        context_expansion_service.clear_chunks()
+        context_expansion_service.set_document_chunks(chunks)
         
         # 5. Extract images automatically
         extracted_images = extract_and_store_images(file_bytes)
@@ -73,25 +81,36 @@ async def upload_local_pdf(request: LocalUploadRequest):
         with open(request.file_path, 'rb') as f:
             file_bytes = f.read()
             
+        filename = os.path.basename(request.file_path)
         pdf_pages = extract_text_from_pdf(file_bytes)
         if not pdf_pages:
             raise HTTPException(status_code=400, detail="Could not extract text from PDF")
             
-        chunks = chunk_text(pdf_pages)
+        doc_id = generate_document_id(file_bytes, filename)
+        chunks = chunk_pages_with_metadata(pdf_pages, document_id=doc_id, document_name=filename)
         
         clear_knowledge_base()
         add_to_knowledge_base(chunks)
+        
+        bm25_service.clear_index()
+        bm25_service.add_documents(chunks)
+        
+        context_expansion_service.clear_chunks()
+        context_expansion_service.set_document_chunks(chunks)
         
         extracted_images = extract_and_store_images(file_bytes)
         
         return UploadResponse(
             success=True,
-            filename=os.path.basename(request.file_path),
+            filename=filename,
             num_chunks=len(chunks),
             images=extracted_images
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_pdf(request: ChatRequest):

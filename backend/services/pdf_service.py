@@ -10,10 +10,23 @@ from services.llm_service import get_groq_client
 
 load_dotenv()
 
+import hashlib
+import pymupdf4llm
+
+def generate_document_id(file_bytes: bytes, filename: str = "") -> str:
+    """
+    Generates a deterministic document ID string from PDF file content and filename.
+    """
+    hasher = hashlib.sha256()
+    hasher.update(file_bytes)
+    if filename:
+        hasher.update(filename.encode("utf-8"))
+    return f"doc_{hasher.hexdigest()[:12]}"
+
 def extract_text_from_pdf(file_bytes: bytes) -> list:
     """
-    Extracts raw text from a PDF file. Uses PyMuPDF for normal PDFs and falls back
-    to Groq Vision OCR for scanned PDFs.
+    Extracts layout-aware Markdown text from a PDF file using pymupdf4llm.
+    Falls back to PyMuPDF fitz text blocks or Groq Vision OCR for scanned PDFs.
     
     Args:
         file_bytes (bytes): The raw bytes of the uploaded PDF file.
@@ -22,36 +35,57 @@ def extract_text_from_pdf(file_bytes: bytes) -> list:
         list: A list of dictionaries, each containing 'page' (int) and 'text' (str).
     """
     try:
-        # 1. Attempt fast extraction with PyMuPDF
         extracted_pages = []
         total_text_length = 0
-        
-        # fitz can open from stream/bytes directly
+
+        # 1. Attempt layout-aware markdown extraction via pymupdf4llm
+        try:
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            num_pages = len(doc)
+
+            m_chunks = pymupdf4llm.to_markdown(doc, page_chunks=True)
+            doc.close()
+
+            if m_chunks:
+                for idx, chunk in enumerate(m_chunks):
+                    page_num = idx + 1
+                    if isinstance(chunk, dict):
+                        page_num = chunk.get("metadata", {}).get("page_number", idx + 1)
+                        text_content = chunk.get("text", "")
+                    else:
+                        text_content = str(chunk)
+
+                    if text_content and text_content.strip():
+                        extracted_pages.append({"page": page_num, "text": text_content.strip()})
+                        total_text_length += len(text_content.strip())
+        except Exception as p_err:
+            print(f"pymupdf4llm layout extraction warning: {p_err}. Falling back to standard fitz...")
+
+        # 2. Fallback to PyMuPDF fitz plain text if pymupdf4llm yielded no text
+        if not extracted_pages:
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
+            num_pages = len(doc)
+            for i in range(num_pages):
+                page = doc.load_page(i)
+                text = page.get_text("text")
+                if text:
+                    clean_text = "\n".join([line.strip() for line in text.split("\n") if line.strip()])
+                    if clean_text:
+                        extracted_pages.append({"page": i + 1, "text": clean_text})
+                        total_text_length += len(clean_text)
+            doc.close()
+
+        # 3. Fallback to OCR for scanned PDFs
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         num_pages = len(doc)
-        
-        for i in range(num_pages):
-            page = doc.load_page(i)
-            # Use 'text' block for clean structural extraction
-            text = page.get_text("text")
-            if text:
-                # Remove excessive newlines but keep paragraph structure
-                clean_text = "\n".join([line.strip() for line in text.split("\n") if line.strip()])
-                if clean_text:
-                    extracted_pages.append({"page": i + 1, "text": clean_text})
-                    total_text_length += len(clean_text)
-                    
         doc.close()
-        
-        # 2. Check if we need to fallback to OCR
-        # If the extracted text is very short compared to the number of pages, it's likely scanned.
+
         if total_text_length < (num_pages * 50) or total_text_length < 100:
             print("Scanned PDF detected (low text volume). Falling back to Groq Vision OCR...")
             
             client = get_groq_client()
             vision_model = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")
             
-            print("Extracting text via Groq Vision OCR...")
             doc = fitz.open(stream=file_bytes, filetype="pdf")
             ocr_pages = []
             
@@ -100,4 +134,5 @@ def extract_text_from_pdf(file_bytes: bytes) -> list:
         return extracted_pages
     except Exception as e:
         raise Exception(f"Failed to extract text from PDF: {str(e)}")
+
 

@@ -6,6 +6,34 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 # ==========================================
+# Hybrid RAG Chunk Metadata Schema
+# ==========================================
+class ChunkMetadata(BaseModel):
+    """
+    Schema for document chunk metadata stored alongside vector embeddings in ChromaDB.
+    """
+    document_id: str = Field(description="Unique identifier for the PDF document")
+    document_name: str = Field(description="Filename of the uploaded PDF")
+    page_number: int = Field(default=1, description="Primary page number")
+    page_start: int = Field(default=1, description="Starting page of chunk")
+    page_end: int = Field(default=1, description="Ending page of chunk")
+    section: str = Field(default="", description="Active section title")
+    heading: str = Field(default="", description="Immediate heading title")
+    chapter: str = Field(default="", description="Chapter title if available")
+    subsection: str = Field(default="", description="Sub-heading title if available")
+    parent_section: str = Field(default="", description="Parent section title")
+    chunk_id: str = Field(description="Deterministic chunk ID (doc_id + page + index)")
+    parent_chunk_id: str = Field(default="", description="Parent chunk ID when applicable")
+    content_type: str = Field(default="text", description="Type: text, table, figure, image, code, or other")
+    figure_id: str = Field(default="", description="Figure ID if chunk is a figure/diagram")
+    table_id: str = Field(default="", description="Table ID if chunk is a table")
+    caption: str = Field(default="", description="Caption associated with figure/table")
+    source_type: str = Field(default="pdf", description="Source document type")
+
+
+
+
+# ==========================================
 # Chat (RAG) Schemas
 # ==========================================
 class ChatRequest(BaseModel):

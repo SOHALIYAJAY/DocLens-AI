@@ -1,37 +1,62 @@
 # services/retriever_service.py
 from typing import List
-from services.embedding_service import generate_embeddings
-from services.vector_service import search_knowledge_base
+from services.hybrid_retriever_service import retrieve_hybrid_chunks
+from services.reranker_service import reranker_service
+from services.context_expansion_service import context_expansion_service
+from core.config import settings
 
-def retrieve_relevant_chunks(query: str, top_k: int = 6, max_distance: float = 1.5) -> List[str]:
+def retrieve_relevant_chunks(query: str, top_k: int = None, max_distance: float = 1.5) -> List[str]:
     """
-    Retrieves the most relevant text chunks for a given query.
-    Filters out chunks that are too far in distance (irrelevant).
+    Retrieves the most relevant text chunks using Hybrid Search (Vector + BM25 RRF),
+    Cross-Encoder Reranking, and Parent/Neighbor Context Expansion.
     
     Args:
         query (str): The user's question.
-        top_k (int): How many chunks to retrieve.
-        max_distance (float): The maximum distance threshold.
+        top_k (int, optional): Target number of top reranked chunks to return.
         
     Returns:
-        List[str]: The relevant text chunks formatted with page metadata.
+        List[str]: Formatted context blocks with complete section and page metadata.
     """
     if not query:
         return []
         
-    # Search the vector database for the closest chunks
-    # Note: search_knowledge_base now takes the string query directly
-    results = search_knowledge_base(query, top_k)
+    # 1. Hybrid Retrieval (ChromaDB Vector + BM25 RRF -> 15 candidates)
+    hybrid_candidates = retrieve_hybrid_chunks(query)
+    
+    # 2. Cross-Encoder Reranking (15 candidates -> top 5 reranked candidates)
+    target_k = top_k or settings.RERANK_TOP_K
+    reranked_results = reranker_service.rerank(query, hybrid_candidates, top_k=target_k)
+    
+    # 3. Context Expansion (Parent section + contiguous neighbor chunks)
+    expanded_blocks = context_expansion_service.expand_chunks(query, reranked_results)
     
     formatted_chunks = []
     
-    for res in results:
-        # Format the chunk with page metadata
-        page = res.get("page", "?")
+    for res in expanded_blocks:
+        page_start = res.get("page_start", res.get("page_number", 1))
+        page_end = res.get("page_end", res.get("page_number", 1))
+        page_str = f"Page {page_start}" if page_start == page_end else f"Pages {page_start}-{page_end}"
+
+        section = res.get("section") or res.get("metadata", {}).get("section", "")
+        heading = res.get("heading") or res.get("metadata", {}).get("heading", "")
+        content_type = res.get("content_type") or res.get("metadata", {}).get("content_type", "text")
         text = res.get("text", "")
-        formatted_chunks.append(f"[Page {page}]\n{text}")
+
+        header_parts = [f"[{page_str}]"]
+        if section and section != "General":
+            header_parts.append(f"[Section: {section}]")
+        if heading and heading != section:
+            header_parts.append(f"[Heading: {heading}]")
+        if content_type and content_type != "text":
+            header_parts.append(f"[{content_type.upper()}]")
+
+        header_str = " ".join(header_parts)
+        formatted_chunks.append(f"{header_str}\n{text}")
             
-    # Remove exact duplicates that might have been indexed multiple times
+    # Remove exact duplicates
     unique_chunks = list(dict.fromkeys(formatted_chunks))
     
     return unique_chunks
+
+
+

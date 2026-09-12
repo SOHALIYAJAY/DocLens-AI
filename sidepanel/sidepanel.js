@@ -71,6 +71,9 @@ const RECENT_PDFS = [
 /** Currently visible panel section ID */
 let activeSection = "chat";
 
+/** Multi-turn conversation history for grounded follow-up chat */
+let chatHistory = [];
+
 /* ==========================================================================
    Utility Helpers
    ========================================================================== */
@@ -110,53 +113,53 @@ function escapeHtml(str) {
  */
 function formatMarkdown(text) {
   if (!text) return "";
-  
+
   let html = text;
-  
+
   // 1. Bold: **text**
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-  
+
   // 2. List items: * text or - text
   html = html.replace(/^\s*[\*\-]\s+(.*)/gm, '<li>$1</li>');
-  
+
   // 3. Wrap consecutive <li> tags in <ul>
   html = html.replace(/(<li>.*<\/li>\n?)+/g, match => `<ul style="margin: 8px 0; padding-left: 20px; list-style-type: disc;">${match}</ul>`);
-  
+
   // 4. Parse tables
   html = html.replace(/(?:(?:\|.*\|)\s*\n?)+/g, match => {
-     if (!match.match(/\|[-\s|:]+\|/)) {
-        return match;
-     }
-     let rows = match.trim().split('\n');
-     let tableHtml = '<table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 13px;">';
-     
-     let isHeader = true;
-     for (let i = 0; i < rows.length; i++) {
-         let row = rows[i].trim();
-         if (row.match(/^\|[-\s|:]+\|$/)) {
-             isHeader = false;
-             continue;
-         }
-         
-         let cells = row.split('|');
-         if (cells.length > 0 && cells[0].trim() === '') cells.shift();
-         if (cells.length > 0 && cells[cells.length - 1].trim() === '') cells.pop();
-         
-         tableHtml += '<tr>';
-         let tag = isHeader ? 'th' : 'td';
-         let style = isHeader 
-           ? 'border: 1px solid #555; padding: 6px; background-color: rgba(255,255,255,0.1); text-align: left; font-weight: bold;' 
-           : 'border: 1px solid #555; padding: 6px;';
-           
-         cells.forEach(cell => {
-             tableHtml += `<${tag} style="${style}">${cell.trim()}</${tag}>`;
-         });
-         tableHtml += '</tr>';
-     }
-     tableHtml += '</table>';
-     return tableHtml;
+    if (!match.match(/\|[-\s|:]+\|/)) {
+      return match;
+    }
+    let rows = match.trim().split('\n');
+    let tableHtml = '<table style="width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 13px;">';
+
+    let isHeader = true;
+    for (let i = 0; i < rows.length; i++) {
+      let row = rows[i].trim();
+      if (row.match(/^\|[-\s|:]+\|$/)) {
+        isHeader = false;
+        continue;
+      }
+
+      let cells = row.split('|');
+      if (cells.length > 0 && cells[0].trim() === '') cells.shift();
+      if (cells.length > 0 && cells[cells.length - 1].trim() === '') cells.pop();
+
+      tableHtml += '<tr>';
+      let tag = isHeader ? 'th' : 'td';
+      let style = isHeader
+        ? 'border: 1px solid #555; padding: 6px; background-color: rgba(255,255,255,0.1); text-align: left; font-weight: bold;'
+        : 'border: 1px solid #555; padding: 6px;';
+
+      cells.forEach(cell => {
+        tableHtml += `<${tag} style="${style}">${cell.trim()}</${tag}>`;
+      });
+      tableHtml += '</tr>';
+    }
+    tableHtml += '</table>';
+    return tableHtml;
   });
-  
+
   // 5. Wrap blocks in <p> and replace remaining single newlines with <br>
   html = html.split(/\n{2,}/).map(block => {
     if (block.trim().startsWith('<ul') || block.trim().startsWith('<table')) {
@@ -164,7 +167,7 @@ function formatMarkdown(text) {
     }
     return `<p style="margin-bottom: 8px;">${block.replace(/\n/g, '<br>')}</p>`;
   }).join('');
-  
+
   return html;
 }
 
@@ -559,7 +562,7 @@ async function renderBookmarks() {
   try {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tabs[0]) activeTabUrl = tabs[0].url;
-  } catch (_) {}
+  } catch (_) { }
 
   let bookmarks = [];
   try {
@@ -730,10 +733,10 @@ function appendChatMessage(text, isUser = false) {
 
   const msgDiv = document.createElement("div");
   msgDiv.className = isUser ? "message message-user" : "message message-ai";
-  
+
   const avatarClass = isUser ? "user" : "ai";
   const avatarIcon = isUser ? "fa-user" : "fa-robot";
-  
+
   msgDiv.innerHTML = `
     <div class="message-avatar ${avatarClass}">
       <i class="fa-solid ${avatarIcon}" aria-hidden="true"></i>
@@ -772,7 +775,10 @@ async function handleSendChat() {
     const response = await new Promise((resolve) => {
       chrome.runtime.sendMessage({
         action: "CHAT_WITH_PDF",
-        payload: { question: message }
+        payload: {
+          question: message,
+          history: chatHistory.slice(-6)
+        }
       }, (res) => {
         if (chrome.runtime.lastError) {
           resolve({ success: false, error: chrome.runtime.lastError.message });
@@ -792,6 +798,10 @@ async function handleSendChat() {
       const answerData = response.data || response;
       const answer = answerData.answer || response.answer || "No response received.";
       appendChatMessage(answer, false);
+
+      // Track multi-turn conversation history
+      chatHistory.push({ role: "user", content: message });
+      chatHistory.push({ role: "assistant", content: answer });
     }
   } catch (err) {
     if (indicator) indicator.hidden = true;
@@ -801,6 +811,7 @@ async function handleSendChat() {
 }
 
 function handleClearChat() {
+  chatHistory = [];
   const container = document.getElementById("chat-messages");
   if (container) {
     container.innerHTML = `
@@ -824,6 +835,121 @@ function handleClearChat() {
   }
   showToast("Chat cleared!");
 }
+
+/**
+ * Checks and displays the currently active document loaded in the backend knowledge base.
+ */
+async function checkCurrentDocument() {
+  const docNameEl = document.getElementById("active-doc-name");
+  const docBadgeEl = document.getElementById("active-doc-badge");
+  if (!docNameEl || !docBadgeEl) return;
+
+  try {
+    const res = await fetch("http://127.0.0.1:8000/current-document");
+    if (!res.ok) throw new Error("Backend offline");
+    const data = await res.json();
+    if (data.loaded) {
+      docNameEl.textContent = data.filename;
+      docNameEl.title = `${data.filename} (${data.num_chunks} chunks, ${data.total_pages || data.pages?.length || 1} pages)`;
+      docBadgeEl.textContent = `${data.num_chunks} chunks`;
+      docBadgeEl.style.background = "rgba(16, 163, 127, 0.2)";
+      docBadgeEl.style.color = "#10a37f";
+    } else {
+      docNameEl.textContent = "No PDF loaded";
+      docNameEl.title = "Upload a PDF or extract from current tab";
+      docBadgeEl.textContent = "Not loaded";
+      docBadgeEl.style.background = "rgba(239, 68, 68, 0.2)";
+      docBadgeEl.style.color = "#ef4444";
+    }
+  } catch (err) {
+    docNameEl.textContent = "Backend offline";
+    docBadgeEl.textContent = "Offline";
+    docBadgeEl.style.background = "rgba(239, 68, 68, 0.2)";
+    docBadgeEl.style.color = "#ef4444";
+  }
+}
+
+/**
+ * Handles clearing the active document from knowledge base to start fresh.
+ */
+async function handleClearDocument() {
+  try {
+    await fetch("http://127.0.0.1:8000/clear-document", { method: "POST" });
+    chatHistory = [];
+    handleClearChat();
+    await checkCurrentDocument();
+    showToast("Knowledge base cleared! Upload a PDF to start fresh.");
+  } catch (err) {
+    showToast("Failed to clear document: " + err.message, true);
+  }
+}
+
+/**
+ * Handles direct file upload of a local PDF document.
+ */
+async function handleFileUpload(event) {
+  const file = event.target?.files?.[0];
+  if (!file) return;
+  if (!file.name.toLowerCase().endsWith(".pdf")) {
+    showToast("Selected file must be a PDF document.", true);
+    return;
+  }
+
+  const statusArea = document.getElementById("extraction-status-area");
+  if (statusArea) {
+    statusArea.style.display = "block";
+    statusArea.style.borderColor = "var(--color-primary)";
+    statusArea.style.background = "rgba(6, 182, 212, 0.1)";
+    statusArea.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> <em>Uploading and indexing "${escapeHtml(file.name)}"...</em>`;
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file, file.name);
+
+    const res = await fetch("http://127.0.0.1:8000/upload-pdf", {
+      method: "POST",
+      body: formData
+    });
+
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const errJson = await res.json();
+        if (errJson && errJson.detail) detail = errJson.detail;
+      } catch (_) { }
+      throw new Error(detail);
+    }
+
+    const data = await res.json();
+    if (statusArea) {
+      statusArea.style.display = "none";
+      statusArea.textContent = "";
+    }
+
+    chatHistory = [];
+    handleClearChat();
+    await checkCurrentDocument();
+
+    showToast(`✅ "${file.name}" loaded successfully!`);
+    appendChatMessage(`📄 **Loaded Document:** "${escapeHtml(file.name)}" (${data.num_chunks} chunks). The chatbot is now ready to answer questions strictly from this PDF!`, false);
+
+    if (data.images && data.images.length > 0) {
+      renderExtractedImages(data.images);
+    }
+  } catch (err) {
+    if (statusArea) {
+      statusArea.style.display = "block";
+      statusArea.style.borderColor = "#ef4444";
+      statusArea.style.background = "rgba(239, 68, 68, 0.1)";
+      statusArea.textContent = "Upload failed: " + err.message;
+    }
+    showToast("Upload failed: " + err.message, true);
+  } finally {
+    event.target.value = "";
+  }
+}
+
 
 /**
  * Inserts a suggested question into the chat input.
@@ -875,22 +1001,22 @@ function renderExtractedImages(images) {
   if (!gallery) return;
 
   gallery.innerHTML = "";
-  
+
   if (!images || images.length === 0) {
     gallery.innerHTML = '<div class="alert info">No images found in this PDF.</div>';
     return;
   }
-  
+
   images.forEach(img => {
     const card = document.createElement("div");
     card.className = "image-card";
     card.style = "border: 1px solid var(--border-color); border-radius: var(--border-radius); padding: 0.5rem; background: var(--surface-color);";
-    
+
     const imgEl = document.createElement("img");
     // Fetch image from the backend via the GET endpoint
     imgEl.src = `http://127.0.0.1:8000/image/${img.image_id}`;
     imgEl.style = "max-width: 100%; height: auto; border-radius: var(--border-radius);";
-    
+
     const meta = document.createElement("div");
     meta.style = "display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem; font-size: var(--text-xs); color: var(--text-secondary);";
     meta.innerHTML = `
@@ -909,55 +1035,55 @@ function renderExtractedImages(images) {
         chrome.tabs.create({ url: newUrl, active: true });
       }
     });
-    
+
     const explainBtn = document.createElement("button");
     explainBtn.className = "btn btn-secondary";
     explainBtn.style = "padding: 0.25rem 0.5rem; font-size: var(--text-xs);";
     explainBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Explain Image';
-    
+
     const explanationContainer = document.createElement("div");
     explanationContainer.style = "margin-top: 0.5rem; font-size: var(--text-sm); display: none; background: var(--background-color); padding: 0.5rem; border-radius: var(--border-radius); border: 1px solid var(--border-color);";
-    
+
     explainBtn.addEventListener("click", () => {
       explainBtn.disabled = true;
       explainBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
       explanationContainer.style.display = "block";
       explanationContainer.innerHTML = '<em>Analyzing image...</em>';
-      
-      chrome.runtime.sendMessage({ 
-        action: "EXPLAIN_IMAGE", 
+
+      chrome.runtime.sendMessage({
+        action: "EXPLAIN_IMAGE",
         payload: { image_id: img.image_id }
       }, (explainRes) => {
         explainBtn.disabled = false;
         explainBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Explain Image';
-        
+
         if (chrome.runtime.lastError || !explainRes || !explainRes.success) {
           explanationContainer.innerHTML = '<span style="color:var(--danger-color)">Failed to analyze image.</span>';
           return;
         }
-        
+
         const result = explainRes.data || explainRes;
-        
+
         let componentsHtml = "";
         if (result.important_components && result.important_components.length > 0) {
-            componentsHtml = `<strong>Important Components:</strong><ul>` + result.important_components.map(c => `<li>${c}</li>`).join("") + `</ul>`;
+          componentsHtml = `<strong>Important Components:</strong><ul>` + result.important_components.map(c => `<li>${c}</li>`).join("") + `</ul>`;
         }
-        
+
         let relationshipsHtml = "";
         if (result.relationships && result.relationships.length > 0) {
-            relationshipsHtml = `<strong>Relationships:</strong><ul>` + result.relationships.map(r => `<li>${r}</li>`).join("") + `</ul>`;
+          relationshipsHtml = `<strong>Relationships:</strong><ul>` + result.relationships.map(r => `<li>${r}</li>`).join("") + `</ul>`;
         }
-        
+
         let takeawaysHtml = "";
         if (result.key_takeaways && result.key_takeaways.length > 0) {
-            takeawaysHtml = `<strong>Key Takeaways:</strong><ul>` + result.key_takeaways.map(k => `<li>${k}</li>`).join("") + `</ul>`;
+          takeawaysHtml = `<strong>Key Takeaways:</strong><ul>` + result.key_takeaways.map(k => `<li>${k}</li>`).join("") + `</ul>`;
         }
-        
+
         let applicationHtml = "";
         if (result.real_world_application) {
-            applicationHtml = `<strong>Real-World Application:</strong><br/>${result.real_world_application}`;
+          applicationHtml = `<strong>Real-World Application:</strong><br/>${result.real_world_application}`;
         }
-        
+
         explanationContainer.innerHTML = `
           <strong>${result.title}</strong><br/>
           <em>${result.summary}</em><br/>
@@ -971,7 +1097,7 @@ function renderExtractedImages(images) {
         `;
       });
     });
-    
+
     meta.appendChild(explainBtn);
     card.appendChild(imgEl);
     card.appendChild(meta);
@@ -984,11 +1110,50 @@ function renderExtractedImages(images) {
    Event Binding
    ========================================================================== */
 
+async function handleRefreshSidebar(btnId = "btn-refresh-sidebar") {
+  const btn = document.getElementById(btnId);
+  const icon = btn ? btn.querySelector("i") : null;
+
+  if (icon) icon.classList.add("spinning");
+
+  logAction("Sidebar refresh triggered");
+
+  try {
+    await new Promise((resolve) => {
+      chrome.storage.local.remove(["lastExtractedText", "lastExtractedImages"], () => {
+        resolve();
+      });
+    });
+    await renderBookmarks();
+    await checkCurrentDocument();
+    showToast("Workspace refreshed!");
+  } catch (err) {
+    logAction("Refresh failed", err);
+    showToast("Refresh failed", true);
+  } finally {
+    setTimeout(() => {
+      if (icon) icon.classList.remove("spinning");
+    }, 600);
+  }
+}
+
+function handleQuickBookmarksToggle() {
+  if (activeSection === "bookmarks") {
+    navigateToSection("chat");
+  } else {
+    navigateToSection("bookmarks");
+    renderBookmarks();
+  }
+}
+
 /**
  * Attaches all button and input event listeners.
  */
 function bindEventListeners() {
   document.getElementById("btn-settings")?.addEventListener("click", handleSettingsClick);
+
+  // Document Upload & Reset
+  document.getElementById("btn-clear-doc")?.addEventListener("click", handleClearDocument);
 
   // AI Chat
   document.getElementById("btn-send-chat")?.addEventListener("click", handleSendChat);
@@ -1009,41 +1174,10 @@ function bindEventListeners() {
     });
   }
 
-
-
-
-async function handleRefreshSidebar(btnId = "btn-refresh-sidebar") {
-  const btn = document.getElementById(btnId);
-  const icon = btn ? btn.querySelector("i") : null;
-
-  if (icon) icon.classList.add("spinning");
-
-  logAction("Sidebar refresh triggered");
-
-  try {
-    await new Promise((resolve) => {
-      chrome.storage.local.remove(["lastExtractedText", "lastExtractedImages"], () => {
-        resolve();
-      });
-    });
-    await renderBookmarks();
-    showToast("Workspace refreshed!");
-    setTimeout(() => {
-      window.location.reload();
-    }, 600);
-  } catch (err) {
-    logAction("Refresh failed", err);
-  } finally {
-    setTimeout(() => {
-      if (icon) icon.classList.remove("spinning");
-    }, 600);
-  }
-}
-
-  // Bookmarks
+  // Bookmarks & Header Actions
   document.getElementById("btn-refresh-sidebar")?.addEventListener("click", () => handleRefreshSidebar("btn-refresh-sidebar"));
   document.getElementById("btn-refresh-bookmarks")?.addEventListener("click", () => handleRefreshSidebar("btn-refresh-bookmarks"));
-  document.getElementById("btn-quick-bookmarks")?.addEventListener("click", handleBookmarkPage);
+  document.getElementById("btn-quick-bookmarks")?.addEventListener("click", handleQuickBookmarksToggle);
   document.getElementById("btn-bookmark-page")?.addEventListener("click", handleBookmarkPage);
   document.getElementById("bookmark-search-input")?.addEventListener("input", () => renderBookmarks());
   document.getElementById("bookmark-sort-select")?.addEventListener("change", () => renderBookmarks());
@@ -1059,19 +1193,19 @@ async function handleRefreshSidebar(btnId = "btn-refresh-sidebar") {
     logAction("Extract PDF clicked");
     const btn = document.getElementById("btn-extract-pdf");
     if (btn) btn.disabled = true;
-    
+
     const statusArea = document.getElementById("extraction-status-area");
     if (statusArea) {
       statusArea.style.display = "block";
       statusArea.style.borderColor = "var(--color-primary)";
       statusArea.style.background = "rgba(6, 182, 212, 0.1)";
-      statusArea.innerHTML = "<em>Extracting text and images... please wait.</em>";
+      statusArea.innerHTML = "<i class=\"fa-solid fa-spinner fa-spin\"></i> <em>Extracting text and images from active tab...</em>";
     }
-    
+
     chrome.runtime.sendMessage({ action: "EXTRACT_PDF_TEXT" });
   });
-  
-  // Dummy testing listener and extraction result listener
+
+  // Runtime listener for extraction and test messages
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === "FORWARD_TEST_CONNECTION") {
       logAction("TEST MESSAGE RECEIVED", { source: message.source, data: message.data });
@@ -1084,12 +1218,16 @@ async function handleRefreshSidebar(btnId = "btn-refresh-sidebar") {
         statusArea.style.display = "none";
         statusArea.textContent = "";
       }
-      
+
       if (message.success) {
         if (message.images) {
           renderExtractedImages(message.images);
         }
-        
+
+        checkCurrentDocument();
+        showToast("✅ PDF successfully extracted and indexed!");
+        appendChatMessage("📄 **PDF extracted from active tab!** The chatbot is now ready to answer questions about this document.", false);
+
         // Trigger AI Navigator generation
         if (typeof fetchNavigator === "function") {
           fetchNavigator();
@@ -1099,6 +1237,7 @@ async function handleRefreshSidebar(btnId = "btn-refresh-sidebar") {
         statusArea.style.borderColor = "#ef4444";
         statusArea.style.background = "rgba(239, 68, 68, 0.1)";
         statusArea.textContent = "Error: " + message.error;
+        showToast("Extraction failed: " + message.error, true);
       }
     }
   });
@@ -1117,6 +1256,7 @@ function initSidePanel() {
 
   renderBookmarks();
   bindEventListeners();
+  checkCurrentDocument();
 
   // Ensure only Chat is visible on load
   navigateToSection("chat");
@@ -1125,3 +1265,4 @@ function initSidePanel() {
 }
 
 document.addEventListener("DOMContentLoaded", initSidePanel);
+

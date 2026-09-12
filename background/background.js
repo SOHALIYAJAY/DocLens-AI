@@ -425,7 +425,10 @@ async function handleChatWithPdf(payload) {
     const response = await fetch("http://127.0.0.1:8000/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question: payload.question }),
+      body: JSON.stringify({
+        question: payload.question,
+        history: payload.history || []
+      }),
     });
     
     if (!response.ok) {
@@ -815,16 +818,21 @@ async function handleExtractPdfText(payload, sender) {
       }
     }
 
-    if (pdfUrl.startsWith("file://")) {
-      logMessage("Local file detected. Sending local path to backend...", { pdfUrl });
+    // Clean URL by stripping any hash fragment (e.g. #page=...) or query string
+    const cleanUrl = pdfUrl.split("#")[0].split("?")[0];
+
+    if (cleanUrl.startsWith("file://")) {
+      logMessage("Local file detected. Sending local path to backend...", { cleanUrl });
       
-      let localPath = decodeURIComponent(pdfUrl);
+      let localPath = decodeURIComponent(cleanUrl);
       if (localPath.startsWith("file:///")) {
         localPath = localPath.substring(8); // removes file:///
         // If it doesn't look like a Windows drive letter (e.g. C:/), prepend a slash for Mac/Linux
         if (!localPath.match(/^[a-zA-Z]:\//)) {
           localPath = "/" + localPath;
         }
+      } else if (localPath.startsWith("file://")) {
+        localPath = localPath.substring(7);
       }
       
       const uploadRes = await fetch("http://127.0.0.1:8000/upload-local-pdf", {

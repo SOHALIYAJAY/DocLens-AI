@@ -33,3 +33,15 @@ app.include_router(image_router)
 @app.get("/")
 async def root():
     return {"message": "AI PDF Assistant API is running. Check /docs for documentation."}
+
+# 5. Startup hook to ensure table and figure services are restored from persistent context chunks
+@app.on_event("startup")
+async def startup_event():
+    from services.context_expansion_service import context_expansion_service
+    from services.table_service import table_service
+    from services.figure_service import figure_service
+    if context_expansion_service.doc_chunks:
+        table_service.extract_and_register_from_chunks(context_expansion_service.doc_chunks)
+        figure_service.extract_and_register_from_chunks(context_expansion_service.doc_chunks, [])
+        print(f"[STARTUP] Synchronized {len(table_service.get_tables())} tables and {len(figure_service.get_figures())} figures from persistent context chunks.")
+

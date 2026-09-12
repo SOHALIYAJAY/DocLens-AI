@@ -3,7 +3,7 @@
 # incoming requests and structure outgoing responses.
 
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Any, Dict, List
 
 # ==========================================
 # Hybrid RAG Chunk Metadata Schema
@@ -39,9 +39,10 @@ class ChunkMetadata(BaseModel):
 class ChatRequest(BaseModel):
     """
     Schema for the incoming request to the /chat endpoint.
-    It only expects the user's question, as the PDF text is in the vector store.
+    Expects user question and optional recent conversation history.
     """
     question: str
+    history: Optional[list[dict[str, str]]] = Field(default=[], description="Recent conversation history")
 
 class ChatResponse(BaseModel):
     """
@@ -49,6 +50,7 @@ class ChatResponse(BaseModel):
     """
     success: bool
     answer: str
+    sources: Optional[list[dict[str, Any]]] = Field(default=[], description="Structured source citations extracted deterministically from chunk metadata")
 
 class LocalUploadRequest(BaseModel):
     """

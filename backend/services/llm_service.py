@@ -85,19 +85,46 @@ def execute_groq_completion_with_retry(client: Groq, **kwargs):
         try:
             return client.chat.completions.create(**kwargs)
         except Exception as e:
-            if not is_rate_limit_error(e):
+            is_conn_err = isinstance(e, groq.APIConnectionError) or "connection error" in str(e).lower() or "getaddrinfo" in str(e).lower()
+            if not (is_rate_limit_error(e) or is_conn_err):
                 raise e
 
+            # Model Fallback Mechanism for Rate Limit / TPD Exhaustion
+            if is_rate_limit_error(e):
+                current_model = kwargs.get("model", get_groq_model())
+                fallbacks = ["groq/compound-mini", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "groq/compound"]
+                if current_model not in fallbacks:
+                    fallbacks.insert(0, current_model)
+                idx = fallbacks.index(current_model) if current_model in fallbacks else 0
+                for fallback_model in fallbacks[idx + 1:]:
+                    print(f"[Groq Fallback] Rate limit on '{current_model}'. Switching to '{fallback_model}'...")
+                    try:
+                        fallback_kwargs = dict(kwargs)
+                        fallback_kwargs["model"] = fallback_model
+                        res = client.chat.completions.create(**fallback_kwargs)
+                        return res
+                    except Exception as fb_err:
+                        if not is_rate_limit_error(fb_err):
+                            break
+
             if attempt >= max_retries:
-                print(f"[Groq Error] Rate limit 429 persists after {max_retries} retries. Request failed.")
+                print(f"[Groq Error] Exception persists after {max_retries} retries. Request failed.")
                 raise Exception(
-                    f"Groq API rate limit (HTTP 429) exceeded after {max_retries} retries: {str(e)}"
+                    f"Groq API error after {max_retries} retries: {str(e)}"
                 ) from e
+
+            if is_conn_err:
+                wait_seconds = 3.0 * attempt
+                print(f"[Groq Connection Error] Network glitch on attempt {attempt}/{max_retries}. Retrying in {wait_seconds:.1f}s...")
+                time.sleep(wait_seconds)
+                continue
 
             server_wait = extract_retry_wait_time(e)
             if server_wait is not None and server_wait > 0:
+                if server_wait > 10.0:
+                    server_wait = 10.0
                 wait_seconds = server_wait + 0.2
-                log_msg = f"[Groq 429] Rate limit hit on attempt {attempt}/{max_retries}. Server requested wait of {server_wait:.1f}s. Retrying in {wait_seconds:.1f}s..."
+                log_msg = f"[Groq 429] Rate limit hit on attempt {attempt}/{max_retries}. Retrying in {wait_seconds:.1f}s..."
             else:
                 wait_seconds = initial_backoff * (2 ** (attempt - 1))
                 log_msg = f"[Groq 429] Rate limit hit on attempt {attempt}/{max_retries}. Retrying in {wait_seconds:.1f}s (exponential backoff)..."
@@ -114,7 +141,7 @@ def get_groq_client() -> Groq:
     return Groq(api_key=api_key)
 
 def get_groq_model() -> str:
-    return os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b")
+    return os.getenv("GROQ_MODEL", "groq/compound-mini")
 
 # Aliases for backwards compatibility
 def get_agentrouter_client() -> Groq:
@@ -124,14 +151,19 @@ def get_claude_model() -> str:
     return get_groq_model()
 
 
-def generate_response(context_chunks: List[str], question: str) -> str:
+def generate_response(
+    context_chunks: List[str], 
+    question: str, 
+    history: Optional[List[dict]] = None
+) -> str:
     """
-    Generates a highly accurate response using Groq AI.
-    It strictly uses ONLY the provided context chunks to answer the question.
+    Generates a highly accurate, grounded response using Groq AI.
+    It strictly uses ONLY the provided context chunks and runs through Grounding & Hallucination verification.
     
     Args:
-        context_chunks (List[str]): The relevant text chunks retrieved from the vector database.
+        context_chunks (List[str]): The relevant text chunks retrieved from the vector database, table service, or visual service.
         question (str): The specific question the user asked about the PDF.
+        history (Optional[List[dict]]): Recent conversation history messages.
         
     Returns:
         str: The generated answer from the AI.
@@ -140,7 +172,6 @@ def generate_response(context_chunks: List[str], question: str) -> str:
         ValueError: If inputs are invalid or the API key is missing.
         Exception: If the API request fails.
     """
-    
     if not context_chunks:
         raise ValueError("No context chunks provided. Cannot generate a response.")
         
@@ -148,60 +179,16 @@ def generate_response(context_chunks: List[str], question: str) -> str:
         raise ValueError("The user question is empty. Please ask a valid question.")
 
     try:
-        client = get_groq_client()
-        model_name = get_groq_model()
-
-        system_instruction = (
-            "You are an expert, highly accurate, and clear document-answering AI assistant. "
-            "Answer the user's question with complete precision using the provided context chunks. "
-            "If the question asks about a specific problem or topic (e.g. 'Problem 1' or 'AIM'), identify all matching instances across all practicals/pages in the document. "
-            "Provide step-by-step logic, clear explanations, formatted code blocks, input/output examples, and exact page citations (e.g. Page 1, Page 6). "
-            "Only if the question is completely unmentioned in the document context, reply politely that the document does not contain that detail."
+        from services.grounding_service import generate_grounded_response
+        return generate_grounded_response(
+            context_chunks=context_chunks,
+            question=question,
+            history=history
         )
-
-        combined_context = "\n\n--- Chunk ---\n\n".join(context_chunks)
-        if len(combined_context) > 12000:
-            combined_context = combined_context[:12000] + "\n\n[...context truncated for size...]"
-        prompt = f"""
-Here are the relevant text chunks extracted from the user's PDF document:
-<context>
-{combined_context}
-</context>
-
-Based on the <context> above, please answer the following question:
-{question}
-"""
-
-        safe_print("\n=== DEBUG INFO ===")
-        safe_print(f"USER QUESTION: {question}")
-        safe_print(f"CONTEXT (first 1000 chars):\n{combined_context[:1000]}...")
-        safe_print(f"COMPLETE PROMPT:\n{prompt}")
-        safe_print("==================\n")
-
-        est_tokens = count_tokens(system_instruction) + count_tokens(prompt) + 1024
-        groq_rate_limiter.wait_for_capacity(est_tokens)
-
-        # 7. Send request to Groq with 429 retry
-        response = execute_groq_completion_with_retry(
-            client,
-            model=model_name,
-            max_tokens=1024,
-            temperature=0.0,
-            messages=[
-                {"role": "system", "content": system_instruction},
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        # 8. Extract the response text
-        final_text = response.choices[0].message.content or ""
-                
-        safe_print(f"\n=== RAW GROQ RESPONSE ===\n{final_text}\n===========================\n")
-
-        return final_text
-
     except Exception as e:
         raise Exception(f"An unexpected error occurred during generate_response via Groq: {str(e)}")
+
+
 
 
 def reduce_summaries_hierarchically(

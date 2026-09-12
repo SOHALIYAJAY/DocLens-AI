@@ -20,8 +20,16 @@ from services.navigator_service import generate_navigator
 from models.schemas import NavigatorResponse
 from services.pdf_generator_service import create_navigator_pdf
 
+from services.query_rewriter_service import rewrite_query
+from services.table_service import table_service
+from services.figure_service import figure_service
+from services.topic_service import topic_service
+from services.retriever_service import retrieve_relevant_chunks, retrieve_relevant_chunks_with_metadata
+from services.citation_service import extract_sources_from_metadata, attach_sources_to_answer
+
 # Create an APIRouter instance
 router = APIRouter()
+
 
 @router.post("/upload-pdf", response_model=UploadResponse)
 async def upload_pdf(file: UploadFile = File(...)):
@@ -44,7 +52,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         doc_id = generate_document_id(file_bytes, file.filename)
         chunks = chunk_pages_with_metadata(pdf_pages, document_id=doc_id, document_name=file.filename)
         
-        # 4. Store in vector database, BM25 index & context expansion store
+        # 4. Store in vector database, BM25 index, context expansion store, table registry & figure registry
         clear_knowledge_base()
         add_to_knowledge_base(chunks)
         
@@ -53,9 +61,17 @@ async def upload_pdf(file: UploadFile = File(...)):
         
         context_expansion_service.clear_chunks()
         context_expansion_service.set_document_chunks(chunks)
+
+        table_service.clear_tables()
+        table_service.extract_and_register_from_chunks(chunks)
         
-        # 5. Extract images automatically
+        # 5. Extract images automatically & register figures
         extracted_images = extract_and_store_images(file_bytes)
+        figure_service.clear_figures()
+        figure_service.extract_and_register_from_chunks(chunks, extracted_images)
+        
+        topic_service.clear_topics()
+        topic_service.extract_and_register_from_chunks(chunks, file_bytes=file_bytes, filename=file.filename)
         
         return UploadResponse(
             success=True,
@@ -71,17 +87,18 @@ async def upload_local_pdf(request: LocalUploadRequest):
     """
     Endpoint to load a local PDF directly from the filesystem (useful for file:// URLs).
     """
-    if not os.path.exists(request.file_path):
-        raise HTTPException(status_code=404, detail=f"Local file not found on backend: {request.file_path}")
-    if not request.file_path.lower().endswith(".pdf"):
+    clean_path = request.file_path.split('#')[0].split('?')[0].strip()
+    if not os.path.exists(clean_path):
+        raise HTTPException(status_code=404, detail=f"Local file not found on backend: {clean_path}")
+    if not clean_path.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="File must be a PDF")
         
     try:
         # Read file bytes directly from local filesystem
-        with open(request.file_path, 'rb') as f:
+        with open(clean_path, 'rb') as f:
             file_bytes = f.read()
             
-        filename = os.path.basename(request.file_path)
+        filename = os.path.basename(clean_path)
         pdf_pages = extract_text_from_pdf(file_bytes)
         if not pdf_pages:
             raise HTTPException(status_code=400, detail="Could not extract text from PDF")
@@ -97,8 +114,16 @@ async def upload_local_pdf(request: LocalUploadRequest):
         
         context_expansion_service.clear_chunks()
         context_expansion_service.set_document_chunks(chunks)
+
+        table_service.clear_tables()
+        table_service.extract_and_register_from_chunks(chunks)
         
         extracted_images = extract_and_store_images(file_bytes)
+        figure_service.clear_figures()
+        figure_service.extract_and_register_from_chunks(chunks, extracted_images)
+        
+        topic_service.clear_topics()
+        topic_service.extract_and_register_from_chunks(chunks, file_bytes=file_bytes, filename=filename)
         
         return UploadResponse(
             success=True,
@@ -110,12 +135,79 @@ async def upload_local_pdf(request: LocalUploadRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/current-document")
+async def get_current_document():
+    """
+    Returns the metadata and name of the currently active document loaded in the knowledge base.
+    """
+    try:
+        chunks = context_expansion_service.doc_chunks
+        if not chunks:
+            raw_docs = get_all_chunks()
+            if not raw_docs:
+                return {
+                    "loaded": False,
+                    "filename": "No PDF loaded",
+                    "num_chunks": 0,
+                    "pages": []
+                }
+            return {
+                "loaded": True,
+                "filename": "Active Document",
+                "num_chunks": len(raw_docs),
+                "pages": []
+            }
+            
+        first_chunk = chunks[0]
+        filename = first_chunk.get("document_name", "Active Document.pdf")
+        pages = sorted(list(set(c.get("page_number", c.get("page", 1)) for c in chunks)))
+        return {
+            "loaded": True,
+            "filename": filename,
+            "num_chunks": len(chunks),
+            "pages": pages,
+            "total_pages": len(pages),
+            "num_tables": len(table_service.get_tables()),
+            "num_figures": len(figure_service.get_figures()),
+            "num_topics": len(topic_service.get_topics())
+        }
+    except Exception as e:
+        return {
+            "loaded": False,
+            "filename": "Error checking document",
+            "error": str(e),
+            "num_chunks": 0,
+            "pages": []
+        }
+
+
+@router.post("/clear-document")
+async def clear_document_endpoint():
+    """
+    Clears all active document chunks, vector store, and BM25 indices to start fresh.
+    """
+    try:
+        clear_knowledge_base()
+        bm25_service.clear_index()
+        context_expansion_service.clear_chunks()
+        table_service.clear_tables()
+        figure_service.clear_figures()
+        topic_service.clear_topics()
+        return {
+            "success": True,
+            "message": "Knowledge base and document indices successfully cleared."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_pdf(request: ChatRequest):
     """
-    Endpoint to answer questions based on the uploaded PDF using RAG.
+    Endpoint to answer questions based on the uploaded PDF using Query Understanding, Table-Aware RAG, Visual RAG, and Hybrid RAG.
     """
     try:
         if not request.question or not request.question.strip():
@@ -124,31 +216,115 @@ async def chat_pdf(request: ChatRequest):
                 answer="Sorry, we not found answer in this time."
             )
 
-        # 1. Retrieve relevant chunks from the vector store
-        relevant_chunks = retrieve_relevant_chunks(request.question)
+        # 1. Query Understanding & Conversational Rewriting -> Standalone Retrieval Query
+        retrieval_query = rewrite_query(request.question, request.history)
+
+        # 2. Query Classification & Intent Detection
+        topic_intent = topic_service.classify_topic_intent(retrieval_query)
+        table_intent = table_service.classify_query_intent(retrieval_query)
+        visual_intent = figure_service.classify_visual_query(retrieval_query)
+
+        context_chunks = []
+        raw_metadata_list = []
+
+        # 2.5 Topic & Document Structure Awareness Retrieval
+        if topic_intent["is_topic_query"] and (topic_service.get_topics() or context_expansion_service.doc_chunks):
+            topic_block, topic_meta = topic_service.retrieve_topic_context(retrieval_query, topic_intent)
+            context_chunks.append(topic_block)
+            raw_metadata_list.extend(topic_meta)
+
+            # If user asked for specific topic details (e.g. 'topic 2'), also augment with hybrid chunks
+            if topic_intent.get("query_type") == "detail":
+                hybrid_text, text_meta = retrieve_relevant_chunks_with_metadata(retrieval_query, top_k=2)
+                context_chunks.extend(hybrid_text)
+                raw_metadata_list.extend(text_meta)
+
+        # 3. Table-Aware Retrieval & Deterministic Calculation (when appropriate)
+        elif table_intent["is_table_query"] and table_service.get_tables():
+            matching_table = table_service.table_aware_retrieval(retrieval_query)
+            if matching_table:
+                calc_result = table_service.calculate_table_metrics(
+                    matching_table, table_intent["calc_type"], retrieval_query
+                )
+                formatted_table_block = table_service.format_table_context(matching_table, calc_result)
+                context_chunks.append(formatted_table_block)
+                raw_metadata_list.append({
+                    "type": "table",
+                    "table_id": matching_table["table_id"],
+                    "page_number": matching_table["page_number"]
+                })
+
+                hybrid_text, text_meta = retrieve_relevant_chunks_with_metadata(retrieval_query, top_k=2)
+                context_chunks.extend(hybrid_text)
+                raw_metadata_list.extend(text_meta)
+
+        # 4. Figure, Diagram, Chart & Image Retrieval (when appropriate and no table matched)
+        elif visual_intent["is_visual_query"] and figure_service.get_figures():
+            matching_fig = figure_service.identify_relevant_figure(
+                retrieval_query, target_num=visual_intent["target_num"]
+            )
+            if matching_fig:
+                visual_evidence = None
+                if visual_intent["requires_vision_ai"] and matching_fig.get("image_id"):
+                    visual_evidence = figure_service.analyze_visual_evidence(matching_fig, retrieval_query)
+
+                formatted_fig_block = figure_service.format_figure_context(matching_fig, visual_evidence)
+                context_chunks.append(formatted_fig_block)
+                raw_metadata_list.append({
+                    "type": "figure",
+                    "figure_id": matching_fig["figure_id"],
+                    "page_number": matching_fig["page_number"]
+                })
+
+                hybrid_text, text_meta = retrieve_relevant_chunks_with_metadata(retrieval_query, top_k=2)
+                context_chunks.extend(hybrid_text)
+                raw_metadata_list.extend(text_meta)
+
+        # 5. Fallback / Normal Hybrid Search when not table/visual related or nothing found
+        if not context_chunks:
+            context_chunks, text_meta = retrieve_relevant_chunks_with_metadata(retrieval_query)
+            raw_metadata_list.extend(text_meta)
         
-        if not relevant_chunks:
+        if not context_chunks:
+            if not get_all_chunks() and not context_expansion_service.doc_chunks:
+                return ChatResponse(
+                    success=True,
+                    answer="No PDF document is currently loaded in the chatbot. Please upload a PDF file using the 'Upload PDF File' button or click 'Extract from Tab' to begin!",
+                    sources=[]
+                )
             return ChatResponse(
                 success=True,
-                answer="Sorry, we not found answer in this time."
+                answer="I couldn't find enough information in the uploaded PDF to answer that reliably.",
+                sources=[]
             )
             
-        # 2. Generate answer using the LLM and the retrieved context
+        # 6. Generate answer using LLM with retrieved context & capped history
         answer = generate_response(
-            context_chunks=relevant_chunks,
-            question=request.question
+            context_chunks=context_chunks,
+            question=request.question,
+            history=request.history
         )
         
+        # 7. Extract deterministic sources from chunk metadata & attach to response
+        structured_sources = extract_sources_from_metadata(raw_metadata_list or context_chunks)
+        final_answer = attach_sources_to_answer(answer, structured_sources)
+
         return ChatResponse(
             success=True,
-            answer=answer or "Sorry, we not found answer in this time."
+            answer=final_answer or "I couldn't find enough information in the uploaded PDF to answer that reliably.",
+            sources=structured_sources
         )
     except Exception as e:
         print(f"[Chat Endpoint Warning]: {str(e)}")
+        traceback.print_exc()
         return ChatResponse(
-            success=True,
-            answer="Sorry, we not found answer in this time."
+            success=False,
+            answer=f"Chat processing error: {str(e)}",
+            sources=[]
         )
+
+
+
 
 @router.post("/explain-image")
 async def explain_image_endpoint(request: ExplainImageRequest):

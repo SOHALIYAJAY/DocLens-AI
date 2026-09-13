@@ -15,7 +15,6 @@ from services.embedding_service import generate_embeddings
 from services.vector_service import add_to_knowledge_base, clear_knowledge_base, get_all_chunks
 from services.bm25_service import bm25_service
 from services.context_expansion_service import context_expansion_service
-from services.retriever_service import retrieve_relevant_chunks
 from services.navigator_service import generate_navigator
 from models.schemas import NavigatorResponse
 from services.pdf_generator_service import create_navigator_pdf
@@ -499,7 +498,14 @@ async def download_navigator_pdf(file: UploadFile = File(...)):
         except Exception as e:
             print(f"Error appending links dynamically: {e}")
             
-        pdf_bytes = create_navigator_pdf(navigator_res)
+        structure_manifest = None
+        try:
+            from services.document_structure_service import document_structure_service
+            structure_manifest = document_structure_service.extract_structure(file_bytes, file.filename)
+        except Exception as e:
+            print(f"Error extracting structure manifest for PDF download: {e}")
+
+        pdf_bytes = create_navigator_pdf(navigator_res, structure_manifest=structure_manifest)
         
         return {
             "success": True, 
@@ -543,7 +549,14 @@ async def download_local_navigator_pdf(request: LocalUploadRequest):
         except Exception as e:
             print(f"Error appending links dynamically: {e}")
             
-        pdf_bytes = create_navigator_pdf(navigator_res)
+        structure_manifest = None
+        try:
+            from services.document_structure_service import document_structure_service
+            structure_manifest = document_structure_service.extract_structure(file_bytes, filename)
+        except Exception as e:
+            print(f"Error extracting structure manifest for local PDF download: {e}")
+
+        pdf_bytes = create_navigator_pdf(navigator_res, structure_manifest=structure_manifest)
         
         return {
             "success": True, 

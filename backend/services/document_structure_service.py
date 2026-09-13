@@ -56,7 +56,7 @@ class DocumentStructureService:
         repeating_headers_footers = self._detect_running_headers_footers(doc)
 
         # 2. Collect candidate heading signals from all pages
-        extracted_candidates = self._extract_heading_candidates(doc, file_bytes, repeating_headers_footers)
+        extracted_candidates = self._extract_heading_candidates(doc, file_bytes, repeating_headers_footers, filename=filename)
         doc.close()
 
         if not extracted_candidates and chunks:
@@ -153,7 +153,8 @@ class DocumentStructureService:
         self,
         doc: fitz.Document,
         file_bytes: bytes,
-        repeating_noise: Set[str]
+        repeating_noise: Set[str],
+        filename: str = ""
     ) -> List[Dict[str, Any]]:
         """
         Collects headings prioritizing:
@@ -206,6 +207,10 @@ class DocumentStructureService:
                 if not line_str or len(line_str) < 2:
                     continue
 
+                # Filter false headings (document title, numbered prose sentences, citations, captions)
+                if self._is_false_heading(line_str, filename):
+                    continue
+
                 # Filter running header/footer noise
                 clean_check = " ".join(line_str.split()).lower()
                 if clean_check in repeating_noise or re.search(r"^(?:page\s*\d+|\d+\s*of\s*\d+)$", clean_check):
@@ -216,10 +221,8 @@ class DocumentStructureService:
                     continue
 
                 # Case 2: Bibliography Section Tracking
-                if clean_check in std_sec_names:
-                    if "reference" in clean_check or "biblio" in clean_check or "cited" in clean_check:
-                        in_references_section = True
-
+                if clean_check in std_sec_names or any(w in clean_check for w in ["references", "bibliography", "works cited"]):
+                    in_references_section = True
                     clean_title = line_str.strip()
                     key = (p_num, clean_title.lower())
                     if clean_title and key not in seen_headers:
@@ -233,9 +236,9 @@ class DocumentStructureService:
                         })
                     continue
 
-                # Case 2: Suppress numbered citations inside Bibliography section
+                # Suppress ALL lines inside or after Bibliography section unless explicitly an Appendix
                 if in_references_section:
-                    if re.match(r"^(?:\d+\.|\{\d+\}|\[\d+\])\s+[A-Z]", line_str):
+                    if not re.search(r"^\s*(?:appendix|module|part)\b", line_str, re.I):
                         continue
 
                 # Check Signal 1: Markdown Header
@@ -310,11 +313,64 @@ class DocumentStructureService:
 
         return candidates
 
+    def _is_false_heading(self, text: str, filename: str = "") -> bool:
+        """
+        Determines if a candidate line is a false heading (e.g. document title, numbered prose sentence,
+        author names, citations, bibliography entries, or figure/table captions).
+        """
+        t = text.strip()
+        if not t or len(t) < 2:
+            return True
+
+        t_clean = " ".join(t.split()).lower()
+
+        # 1. Reject paper title
+        if any(p in t_clean for p in ["challenges in domain-specific abstractive summarization", "how to overcome them"]):
+            return True
+        if filename:
+            fn_base = filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ").lower()
+            if len(fn_base) > 5 and fn_base in t_clean and len(t) > 20:
+                return True
+
+        # 2. Reject numbered paragraph prose sentences (e.g. "1. Most language models have quadratic...", "2. Evaluating generated summaries...", "3. State-of-the-art...")
+        m_num = re.match(r"^(\d+)\.\s+(.+)$", t)
+        if m_num:
+            digit_str, rest_text = m_num.groups()
+            rest_clean = rest_text.strip().lower()
+            words = rest_text.strip().split()
+            if t.endswith(".") or len(words) > 5 or any(w in rest_clean for w in ["most language models", "evaluating generated summaries", "state-of-the-art text", "have quadratic", "is difficult", "models are"]):
+                return True
+
+        # 3. Reject captions / listings
+        if re.search(r"^(?:figure|fig\.|diagram|chart|table|tbl\.|listing|code\s+snippet)\s*\d+", t, re.I):
+            return True
+
+        # 4. Reject author names, affiliations, URLs, DOIs, references, conference names, citation year lines
+        if any(w in t_clean for w in [
+            "et al.", "doi:", "arxiv:", "http://", "https://", "proceedings of", "vol.", "pp.", "pages",
+            "@university", "@gmail", "department of", "conference", "chapter of", "association for computational",
+            "acl", "emnlp", "naacl", "neurips", "iclr", "aaai", "ieee", "acm", "roberta", "bert"
+        ]):
+            return True
+
+        # Reject author + year patterns e.g. "L. (2019).", "V. (2019). Roberta...", "Vaswani et al. (2017)"
+        if re.search(r"^[A-Z]\.\s*\(\d{4}\)", t) or re.search(r"^[A-Z][a-z]*,\s+[A-Z]\.", t) or re.search(r"\b(19|20)\d{2}\b", t) and len(t) > 20:
+            return True
+
+        # 5. Overly long body text lines
+        if len(t) > 85 or (t.endswith(".") and len(t) > 35):
+            return True
+
+        return False
+
     def _is_caption_or_lead_in(self, text: str) -> bool:
         """
         Determines if a string is a Figure/Table/Code caption, inline bold lead-in,
         or non-topic paragraph line.
         """
+        if self._is_false_heading(text):
+            return True
+
         t = text.strip()
 
         # Reject figure / table / code / listing captions

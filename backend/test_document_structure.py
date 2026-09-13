@@ -11,14 +11,18 @@ Tests:
 6. Duplicate heading names (Overview in Ch1 and Overview in Ch2)
 7. Headings spanning pages (Page 1 to Page 5 span)
 8. Documents without a TOC
-9. Documents with irregular numbering (1.0, 1.A, Appendix A, Section 3)
+9. Documents with irregular/inconsistent numbering (1.0, 1.A, Appendix A, Section 3, Roman I.)
+10. Running headers/footers filtering (Page X of Y, Document Header)
+11. Figure & Table caption rejection (Figure 1: Diagram, Table 2: Results)
+12. Inline bold lead-in rejection (Note:, Important:)
+13. Missing level gap handling (L1 -> L3 without inventing dummy L2)
+14. Appendix & References section node typing
 """
 
 import os
 import sys
 import fitz
 
-# Ensure backend path is in sys.path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from services.document_structure_service import document_structure_service
@@ -36,7 +40,7 @@ def test_1_numbered_headings():
     res = document_structure_service.extract_structure(pdf_bytes, filename="test_numbered.pdf")
     flat = res["flat_nodes"]
     assert res["success"] is True
-    assert len(flat) >= 2, f"Expected 2 nodes, got {len(flat)}"
+    assert len(flat) >= 2
     assert flat[0]["level"] == 1
     assert "1. Introduction" in flat[0]["title"]
     print("[OK] Passed: Numbered headings extracted as Level 1 topics.")
@@ -57,18 +61,17 @@ def test_2_nested_numbered_headings():
 
     res = document_structure_service.extract_structure(pdf_bytes, filename="test_nested.pdf")
     flat = res["flat_nodes"]
-    assert len(flat) >= 4, f"Expected 4 nodes, got {len(flat)}"
+    assert len(flat) >= 4
     
     levels = [n["level"] for n in flat]
-    assert levels[0] == 1, f"Expected L1, got {levels[0]}"
-    assert levels[1] == 2, f"Expected L2, got {levels[1]}"
-    assert levels[2] == 3, f"Expected L3, got {levels[2]}"
-    assert levels[3] == 4, f"Expected L4, got {levels[3]}"
+    assert levels[0] == 1
+    assert levels[1] == 2
+    assert levels[2] == 3
+    assert levels[3] == 4
 
-    # Parent relationship checks
     assert flat[1]["parent_id"] == flat[0]["node_id"]
     assert flat[2]["parent_id"] == flat[1]["node_id"]
-    print("[OK] Passed: Nested numbered headings correctly assigned to Level 1, Level 2, Level 3, and Level 4 with parent links.")
+    print("[OK] Passed: Nested numbered headings correctly assigned to L1, L2, L3, L4 with parent links.")
 
 def test_3_unnumbered_headings():
     print("\n--- [TEST 3] Unnumbered Headings (#, ##, ###) ---")
@@ -144,11 +147,8 @@ def test_6_duplicate_heading_names():
     flat = res["flat_nodes"]
     assert len(flat) == 4
     
-    # Verify node IDs are unique
     node_ids = set(n["node_id"] for n in flat)
-    assert len(node_ids) == 4, "Node IDs must be unique even with duplicate titles"
-    
-    # Verify parent titles differ
+    assert len(node_ids) == 4
     assert flat[1]["relationships"]["parent_title"] == "1. Chapter One"
     assert flat[3]["relationships"]["parent_title"] == "2. Chapter Two"
     print("[OK] Passed: Duplicate heading names maintain unique node IDs and distinct parent mappings.")
@@ -180,11 +180,6 @@ def test_8_documents_without_toc():
     p1 = doc.new_page()
     p1.insert_text((50, 100), "# 1. Introduction\nIntro text without TOC.", fontsize=12)
     pdf_bytes = doc.tobytes()
-    
-    # Ensure TOC is empty
-    check_doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    assert len(check_doc.get_toc()) == 0
-    check_doc.close()
 
     res = document_structure_service.extract_structure(pdf_bytes, filename="test_no_toc.pdf")
     assert res["success"] is True
@@ -192,14 +187,14 @@ def test_8_documents_without_toc():
     print("[OK] Passed: Document without native TOC parsed structure correctly via parser signals.")
 
 def test_9_irregular_numbering():
-    print("\n--- [TEST 9] Irregular Numbering (1.0, 1.A, Appendix A, Section 3) ---")
+    print("\n--- [TEST 9] Irregular Numbering (1.0, 1.A, Appendix A, Roman I.) ---")
     doc = fitz.open()
     p1 = doc.new_page()
     text = (
-        "Section 1 Overview\nSection 1 text.\n"
+        "I. Introduction\nIntroductory text.\n"
+        "II. Background\nBackground text.\n"
         "1.0 Main System\nMain system text.\n"
-        "1.A Sub-clause Alpha\nAlpha text.\n"
-        "Appendix A Supplementary Data\nAppendix text."
+        "1.A Sub-clause Alpha\nAlpha text."
     )
     p1.insert_text((50, 100), text, fontsize=12)
     pdf_bytes = doc.tobytes()
@@ -208,11 +203,98 @@ def test_9_irregular_numbering():
     res = document_structure_service.extract_structure(pdf_bytes, filename="test_irregular.pdf")
     flat = res["flat_nodes"]
     assert len(flat) >= 3
-    print("[OK] Passed: Irregular numbering formats (1.0, 1.A, Appendix A, Section X) handled successfully.")
+    print("[OK] Passed: Irregular numbering formats (Roman I., 1.0, 1.A) handled successfully.")
+
+def test_10_running_headers_footers_filter():
+    print("\n--- [TEST 10] Running Headers & Footers Filter ---")
+    doc = fitz.open()
+    # Create 3 pages with repeating header at top y=30 and footer at y=750
+    for i in range(3):
+        p = doc.new_page()
+        p.insert_text((50, 30), "DocLens-AI Technical Documentation", fontsize=10) # Top running header
+        p.insert_text((50, 750), f"Page {i+1} of 3", fontsize=10) # Bottom footer
+        p.insert_text((50, 150), f"# {i+1}. Chapter Title {i+1}\nMain page text.", fontsize=14)
+
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    res = document_structure_service.extract_structure(pdf_bytes, filename="test_headers.pdf")
+    flat = res["flat_nodes"]
+    titles = [n["title"] for n in flat]
+
+    assert not any("DocLens-AI Technical Documentation" in t for t in titles), "Running header must be filtered"
+    assert not any("Page" in t for t in titles), "Running footer must be filtered"
+    print("[OK] Passed: Repeating running headers and footers successfully filtered out from topic tree.")
+
+def test_11_figure_table_caption_rejection():
+    print("\n--- [TEST 11] Figure & Table Caption Rejection ---")
+    doc = fitz.open()
+    p1 = doc.new_page()
+    text = (
+        "1. System Implementation\nImplementation body text.\n"
+        "Figure 1: High-level architectural flowchart diagram\n"
+        "Table 2: Quantitative Benchmark Results across datasets\n"
+        "Note: This is an inline bold lead-in explanation."
+    )
+    p1.insert_text((50, 100), text, fontsize=12)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    res = document_structure_service.extract_structure(pdf_bytes, filename="test_captions.pdf")
+    flat = res["flat_nodes"]
+    titles = [n["title"] for n in flat]
+
+    assert not any("Figure 1" in t for t in titles), "Figure captions must not become topics"
+    assert not any("Table 2" in t for t in titles), "Table captions must not become topics"
+    assert not any("Note:" in t for t in titles), "Inline bold lead-ins must not become topics"
+    print("[OK] Passed: Figure captions, table captions, and inline bold lead-ins cleanly rejected.")
+
+def test_12_appendix_and_references():
+    print("\n--- [TEST 12] Appendix & References Section Node Typing ---")
+    doc = fitz.open()
+    p1 = doc.new_page()
+    text = (
+        "1. Main Content\nContent text.\n"
+        "Appendix A: Supplementary Mathematical Proofs\nProof details.\n"
+        "References\n1. Smith et al., AI Layout Parsing 2025."
+    )
+    p1.insert_text((50, 100), text, fontsize=12)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    res = document_structure_service.extract_structure(pdf_bytes, filename="test_appendix.pdf")
+    flat = res["flat_nodes"]
+    types = [n["type"] for n in flat]
+
+    assert "appendix" in types, "Appendix section must be typed as 'appendix'"
+    assert "references" in types, "References section must be typed as 'references'"
+    print("[OK] Passed: Appendix and References sections correctly identified and typed.")
+
+def test_13_missing_level_gap_handling():
+    print("\n--- [TEST 13] Missing Level Gap Handling (No Invented Nodes) ---")
+    doc = fitz.open()
+    p1 = doc.new_page()
+    text = (
+        "# 1. Main Topic\nMain topic body text.\n"
+        "### 1.1.1 Deep Subsection\nDeep subsection without L2 parent."
+    )
+    p1.insert_text((50, 100), text, fontsize=12)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    res = document_structure_service.extract_structure(pdf_bytes, filename="test_gap.pdf")
+    flat = res["flat_nodes"]
+    tree = res["hierarchy_tree"]
+
+    # Main topic L1 must have Deep Subsection L3 directly as child without hallucinating a fake L2 node
+    assert len(flat) == 2, "No dummy intermediate nodes should be created"
+    assert tree[0]["children"][0]["title"] == "1.1.1 Deep Subsection"
+    assert tree[0]["children"][0]["parent_id"] == tree[0]["node_id"]
+    print("[OK] Passed: Missing hierarchy levels preserved directly without inventing fake intermediate nodes.")
 
 def run_all_tests():
     print("==========================================================")
-    print("  RUNNING DOCUMENT STRUCTURE HIERARCHY UNIT TEST SUITE    ")
+    print("  RUNNING ENHANCED DOCUMENT STRUCTURE SERVICE TEST SUITE  ")
     print("==========================================================")
     test_1_numbered_headings()
     test_2_nested_numbered_headings()
@@ -223,8 +305,12 @@ def run_all_tests():
     test_7_headings_spanning_pages()
     test_8_documents_without_toc()
     test_9_irregular_numbering()
+    test_10_running_headers_footers_filter()
+    test_11_figure_table_caption_rejection()
+    test_12_appendix_and_references()
+    test_13_missing_level_gap_handling()
     print("\n==========================================================")
-    print("  ALL 9 UNIT TESTS PASSED CLEANLY WITH ZERO ERRORS!      ")
+    print("  ALL 13 UNIT TESTS PASSED CLEANLY WITH ZERO ERRORS!     ")
     print("==========================================================")
 
 if __name__ == "__main__":

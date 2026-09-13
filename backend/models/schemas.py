@@ -159,3 +159,35 @@ class NavigatorResponse(BaseModel):
     
     sections: list[NavigatorSection] = Field(default=[], description="Collapsible sections (Chapters, Definitions, etc.)")
 
+
+# ==========================================
+# Document Structure Hierarchy Schemas
+# ==========================================
+class HierarchyNodeResponse(BaseModel):
+    """
+    Schema representing a single topic, subtopic, sub-subtopic, or section node in the document hierarchy.
+    """
+    node_id: str = Field(description="Unique node ID")
+    title: str = Field(description="Title of the topic or section")
+    level: int = Field(description="Hierarchy depth level (1=Main Topic, 2=Subtopic, 3=Sub-subtopic, 4=Section)")
+    level_name: str = Field(description="Level label (Main Topic, Subtopic, Sub-subtopic, Section)")
+    page_start: int = Field(description="Starting page number")
+    page_end: int = Field(description="Ending page number")
+    parent_id: Optional[str] = Field(default=None, description="Parent node ID")
+    children: List[Dict[str, Any]] = Field(default=[], description="Nested child nodes")
+    relationships: Dict[str, Any] = Field(default={}, description="Relationship metadata (parent_title, sibling_prev, sibling_next, page_span)")
+
+class DocumentStructureResponse(BaseModel):
+    """
+    Schema for outgoing document structure response containing complete hierarchy tree.
+    """
+    success: bool
+    document_name: str
+    total_pages: int
+    total_topics: int
+    main_topics_count: int
+    max_depth: int
+    hierarchy_tree: List[Dict[str, Any]] = Field(default=[], description="Nested root topics tree")
+    flat_nodes: List[Dict[str, Any]] = Field(default=[], description="Flat list of all hierarchy nodes")
+
+

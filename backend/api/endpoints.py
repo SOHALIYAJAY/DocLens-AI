@@ -24,6 +24,8 @@ from services.query_rewriter_service import rewrite_query
 from services.table_service import table_service
 from services.figure_service import figure_service
 from services.topic_service import topic_service
+from services.document_structure_service import document_structure_service
+from models.schemas import DocumentStructureResponse
 from services.retriever_service import retrieve_relevant_chunks, retrieve_relevant_chunks_with_metadata
 from services.citation_service import extract_sources_from_metadata, attach_sources_to_answer
 
@@ -73,6 +75,11 @@ async def upload_pdf(file: UploadFile = File(...)):
         topic_service.clear_topics()
         topic_service.extract_and_register_from_chunks(chunks, file_bytes=file_bytes, filename=file.filename)
         
+        try:
+            document_structure_service.extract_structure(file_bytes=file_bytes, filename=file.filename, chunks=chunks)
+        except Exception as ds_err:
+            print(f"[DOCUMENT_STRUCTURE] Non-blocking extraction note: {ds_err}")
+
         return UploadResponse(
             success=True,
             filename=file.filename,
@@ -125,6 +132,11 @@ async def upload_local_pdf(request: LocalUploadRequest):
         topic_service.clear_topics()
         topic_service.extract_and_register_from_chunks(chunks, file_bytes=file_bytes, filename=filename)
         
+        try:
+            document_structure_service.extract_structure(file_bytes=file_bytes, filename=filename, chunks=chunks)
+        except Exception as ds_err:
+            print(f"[DOCUMENT_STRUCTURE] Non-blocking extraction note: {ds_err}")
+
         return UploadResponse(
             success=True,
             filename=filename,
@@ -193,6 +205,7 @@ async def clear_document_endpoint():
         table_service.clear_tables()
         figure_service.clear_figures()
         topic_service.clear_topics()
+        document_structure_service.clear()
         return {
             "success": True,
             "message": "Knowledge base and document indices successfully cleared."
@@ -535,3 +548,57 @@ async def download_local_navigator_pdf(request: LocalUploadRequest):
         err_msg = traceback.format_exc()
         print(err_msg)
         raise HTTPException(status_code=500, detail=err_msg)
+
+
+# ==========================================
+# Document Structure Hierarchy Endpoints
+# ==========================================
+@router.post("/document-structure", response_model=DocumentStructureResponse)
+async def get_document_structure_endpoint(file: UploadFile = File(...)):
+    """
+    Endpoint to extract explicit document structure hierarchy (Main Topics, Subtopics, Sub-subtopics, Sections, Relationships).
+    """
+    if not file.filename.endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+
+    try:
+        file_bytes = await file.read()
+        structure = document_structure_service.extract_structure(file_bytes, file.filename)
+        return DocumentStructureResponse(**structure)
+    except Exception as e:
+        err_msg = traceback.format_exc()
+        print(err_msg)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/local-document-structure", response_model=DocumentStructureResponse)
+async def get_local_document_structure_endpoint(request: LocalUploadRequest):
+    """
+    Endpoint to extract document structure hierarchy directly from a local PDF path.
+    """
+    clean_path = request.file_path.split('#')[0].split('?')[0].strip()
+    if not os.path.exists(clean_path):
+        raise HTTPException(status_code=404, detail=f"Local file not found: {clean_path}")
+    if not clean_path.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+
+    try:
+        with open(clean_path, 'rb') as f:
+            file_bytes = f.read()
+        filename = os.path.basename(clean_path)
+        structure = document_structure_service.extract_structure(file_bytes, filename)
+        return DocumentStructureResponse(**structure)
+    except Exception as e:
+        err_msg = traceback.format_exc()
+        print(err_msg)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/document-structure/current", response_model=DocumentStructureResponse)
+async def get_current_document_structure_endpoint():
+    """
+    Returns the document structure hierarchy of the currently active document loaded in memory.
+    """
+    structure = document_structure_service.get_current_structure()
+    if not structure:
+        raise HTTPException(status_code=444 if False else 404, detail="No active document structure found in memory.")
+    return DocumentStructureResponse(**structure)
+

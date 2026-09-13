@@ -840,6 +840,7 @@ function handleClearChat() {
  * Checks and displays the currently active document loaded in the backend knowledge base.
  */
 async function checkCurrentDocument() {
+  const bannerEl = document.getElementById("active-document-banner");
   const docNameEl = document.getElementById("active-doc-name");
   const docBadgeEl = document.getElementById("active-doc-badge");
   if (!docNameEl || !docBadgeEl) return;
@@ -849,12 +850,14 @@ async function checkCurrentDocument() {
     if (!res.ok) throw new Error("Backend offline");
     const data = await res.json();
     if (data.loaded) {
+      if (bannerEl) bannerEl.style.display = "flex";
       docNameEl.textContent = data.filename;
       docNameEl.title = `${data.filename} (${data.num_chunks} chunks, ${data.total_pages || data.pages?.length || 1} pages)`;
       docBadgeEl.textContent = `${data.num_chunks} chunks`;
       docBadgeEl.style.background = "rgba(16, 163, 127, 0.2)";
       docBadgeEl.style.color = "#10a37f";
     } else {
+      if (bannerEl) bannerEl.style.display = "none";
       docNameEl.textContent = "No PDF loaded";
       docNameEl.title = "Upload a PDF or extract from current tab";
       docBadgeEl.textContent = "Not loaded";
@@ -862,6 +865,7 @@ async function checkCurrentDocument() {
       docBadgeEl.style.color = "#ef4444";
     }
   } catch (err) {
+    if (bannerEl) bannerEl.style.display = "none";
     docNameEl.textContent = "Backend offline";
     docBadgeEl.textContent = "Offline";
     docBadgeEl.style.background = "rgba(239, 68, 68, 0.2)";
@@ -1042,7 +1046,7 @@ function renderExtractedImages(images) {
     explainBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Explain Image';
 
     const explanationContainer = document.createElement("div");
-    explanationContainer.style = "margin-top: 0.5rem; font-size: var(--text-sm); display: none; background: var(--background-color); padding: 0.5rem; border-radius: var(--border-radius); border: 1px solid var(--border-color);";
+    explanationContainer.style = "margin-top: 0.5rem; font-size: var(--text-sm); display: none; background: var(--background-color); padding: 0.6rem; border-radius: var(--border-radius); border: 1px solid var(--border-color); max-height: 320px; overflow-y: auto; line-height: 1.45;";
 
     explainBtn.addEventListener("click", () => {
       explainBtn.disabled = true;

@@ -6,8 +6,11 @@ from groq import Groq
 from dotenv import load_dotenv
 from typing import List
 
-# Load environment variables from a .env file located in the root directory
-load_dotenv()
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+if os.path.exists(env_path):
+    load_dotenv(dotenv_path=env_path, override=True)
+else:
+    load_dotenv(override=True)
 
 from services.token_service import count_tokens
 from services.chunk_service import chunk_text_by_tokens
@@ -137,6 +140,13 @@ def get_groq_client() -> Groq:
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise ValueError("GROQ_API_KEY is missing in the .env file. Please add it.")
+        
+    return Groq(api_key=api_key)
+
+def get_groq_vision_client() -> Groq:
+    api_key = os.getenv("GROQ_VISION_API_KEY") or os.getenv("GROQ_API_KEY")
+    if not api_key:
+        raise ValueError("GROQ_VISION_API_KEY is missing in the .env file. Please add it.")
         
     return Groq(api_key=api_key)
 

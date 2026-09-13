@@ -25,7 +25,8 @@ from services.table_service import table_service
 from services.figure_service import figure_service
 from services.topic_service import topic_service
 from services.document_structure_service import document_structure_service
-from models.schemas import DocumentStructureResponse
+from services.research_report_service import research_report_service
+from models.schemas import DocumentStructureResponse, ResearchReportRequest, ResearchReportResponse
 from services.retriever_service import retrieve_relevant_chunks, retrieve_relevant_chunks_with_metadata
 from services.citation_service import extract_sources_from_metadata, attach_sources_to_answer
 
@@ -75,8 +76,9 @@ async def upload_pdf(file: UploadFile = File(...)):
         topic_service.clear_topics()
         topic_service.extract_and_register_from_chunks(chunks, file_bytes=file_bytes, filename=file.filename)
         
+        ds_manifest = None
         try:
-            document_structure_service.extract_structure(file_bytes=file_bytes, filename=file.filename, chunks=chunks)
+            ds_manifest = document_structure_service.extract_structure(file_bytes=file_bytes, filename=file.filename, chunks=chunks)
         except Exception as ds_err:
             print(f"[DOCUMENT_STRUCTURE] Non-blocking extraction note: {ds_err}")
 
@@ -84,7 +86,8 @@ async def upload_pdf(file: UploadFile = File(...)):
             success=True,
             filename=file.filename,
             num_chunks=len(chunks),
-            images=extracted_images
+            images=extracted_images,
+            document_structure=ds_manifest
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -132,8 +135,9 @@ async def upload_local_pdf(request: LocalUploadRequest):
         topic_service.clear_topics()
         topic_service.extract_and_register_from_chunks(chunks, file_bytes=file_bytes, filename=filename)
         
+        ds_manifest = None
         try:
-            document_structure_service.extract_structure(file_bytes=file_bytes, filename=filename, chunks=chunks)
+            ds_manifest = document_structure_service.extract_structure(file_bytes=file_bytes, filename=filename, chunks=chunks)
         except Exception as ds_err:
             print(f"[DOCUMENT_STRUCTURE] Non-blocking extraction note: {ds_err}")
 
@@ -141,7 +145,8 @@ async def upload_local_pdf(request: LocalUploadRequest):
             success=True,
             filename=filename,
             num_chunks=len(chunks),
-            images=extracted_images
+            images=extracted_images,
+            document_structure=ds_manifest
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -599,6 +604,26 @@ async def get_current_document_structure_endpoint():
     """
     structure = document_structure_service.get_current_structure()
     if not structure:
-        raise HTTPException(status_code=444 if False else 404, detail="No active document structure found in memory.")
+        raise HTTPException(status_code=404, detail="No active document structure found in memory.")
     return DocumentStructureResponse(**structure)
+
+
+# ==========================================
+# AI Research Report Endpoints
+# ==========================================
+@router.post("/generate-research-report", response_model=ResearchReportResponse)
+async def generate_research_report_endpoint(request: Optional[ResearchReportRequest] = None):
+    """
+    Endpoint to synthesize an AI Research Report based on the active document structure hierarchy.
+    """
+    try:
+        focus = request.focus_topic if request else None
+        detail = request.detail_level if request else "comprehensive"
+        report_data = research_report_service.generate_report(focus_topic=focus, detail_level=detail)
+        return ResearchReportResponse(**report_data)
+    except Exception as e:
+        err_msg = traceback.format_exc()
+        print(err_msg)
+        raise HTTPException(status_code=500, detail=str(e))
+
 

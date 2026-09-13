@@ -66,6 +66,7 @@ class UploadResponse(BaseModel):
     filename: str
     num_chunks: int
     images: list[dict] = Field(default=[], description="List of extracted images with metadata (image_id, page, format)")
+    document_structure: Optional[Dict[str, Any]] = Field(default=None, description="Optional normalized document structure hierarchy metadata")
 
 # ==========================================
 # Summarization Schemas
@@ -189,5 +190,26 @@ class DocumentStructureResponse(BaseModel):
     max_depth: int
     hierarchy_tree: List[Dict[str, Any]] = Field(default=[], description="Nested root topics tree")
     flat_nodes: List[Dict[str, Any]] = Field(default=[], description="Flat list of all hierarchy nodes")
+
+
+# ==========================================
+# AI Research Report Schemas
+# ==========================================
+class ResearchReportRequest(BaseModel):
+    """
+    Schema for incoming request to generate an AI Research Report based on document structure.
+    """
+    focus_topic: Optional[str] = Field(default=None, description="Optional specific topic to focus the research report on")
+    detail_level: Optional[str] = Field(default="comprehensive", description="Detail level: executive, comprehensive, or deep-dive")
+
+class ResearchReportResponse(BaseModel):
+    """
+    Schema for outgoing AI Research Report response.
+    """
+    success: bool
+    document_name: str
+    report_markdown: str = Field(description="Synthesized markdown research report structured by document topics")
+    structure_overview: Dict[str, Any] = Field(default={}, description="Summary of main topics and hierarchy metadata used")
+
 
 

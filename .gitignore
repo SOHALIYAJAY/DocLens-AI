@@ -33,6 +33,8 @@ chroma/
 *.chroma
 chroma.sqlite3
 .navigator_cache/
+.bm25_index.json
+.context_chunks.json
 
 # OS
 .DS_Store

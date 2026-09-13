@@ -7,6 +7,7 @@ Verifies:
 2. UploadResponse contract returns existing fields (success, filename, num_chunks, images) plus optional document_structure.
 3. Navigator API response schema remains 100% intact and unchanged.
 4. ResearchReportService generates structured report payloads driven by document structure hierarchy.
+5. PDF Generator includes new "Document Structure & Insights" section without breaking existing PDF output.
 """
 
 import os
@@ -18,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from services.document_structure_service import document_structure_service
 from services.navigator_service import generate_navigator
 from services.research_report_service import research_report_service
+from services.pdf_generator_service import create_navigator_pdf
 from models.schemas import UploadResponse, NavigatorResponse, ResearchReportResponse
 
 def test_1_run_document_structure_unit_tests():
@@ -27,7 +29,6 @@ def test_1_run_document_structure_unit_tests():
 
 def test_2_upload_response_backward_compatibility():
     print("\n--- [INTEGRATION 2] UploadResponse Backward Compatibility ---")
-    # Verify UploadResponse schema can be constructed without document_structure (legacy mode)
     legacy_resp = UploadResponse(
         success=True,
         filename="legacy_document.pdf",
@@ -40,7 +41,6 @@ def test_2_upload_response_backward_compatibility():
     assert legacy_resp.document_structure is None
     print("[OK] Legacy UploadResponse payload validated cleanly.")
 
-    # Verify UploadResponse schema works with optional document_structure
     extended_resp = UploadResponse(
         success=True,
         filename="new_document.pdf",
@@ -77,7 +77,6 @@ def test_4_research_report_generation():
     pdf_bytes = doc.tobytes()
     doc.close()
 
-    # Register structure
     document_structure_service.extract_structure(pdf_bytes, filename="report_test.pdf")
     report = research_report_service.generate_report(focus_topic="Executive Summary", detail_level="comprehensive")
 
@@ -87,6 +86,24 @@ def test_4_research_report_generation():
     assert report["structure_overview"]["total_topics"] >= 2
     print("[OK] AI Research Report generated successfully using document structure hierarchy.")
 
+def test_5_extended_pdf_generation():
+    print("\n--- [INTEGRATION 5] PDF Executive Summary with Document Structure & Insights ---")
+    doc = fitz.open()
+    p1 = doc.new_page()
+    p1.insert_text((50, 100), "# 1. Machine Learning\nML introduction.\n## 1.1 Supervised Learning\nSupervised text.\n### 1.1.1 Classification\nClassification text.", fontsize=14)
+    pdf_bytes = doc.tobytes()
+    doc.close()
+
+    structure_manifest = document_structure_service.extract_structure(pdf_bytes, filename="pdf_insights_test.pdf")
+    nav_res = generate_navigator(pdf_bytes, filename="pdf_insights_test.pdf")
+
+    pdf_output_bytes = create_navigator_pdf(nav_res, structure_manifest=structure_manifest)
+    assert pdf_output_bytes is not None
+    assert len(pdf_output_bytes) > 500
+    assert pdf_output_bytes.startswith(b"%PDF")
+
+    print("[OK] Extended PDF generated successfully ({len(pdf_output_bytes):,} bytes) with new Document Structure & Insights section.", flush=True)
+
 def run_integration_suite():
     print("==========================================================")
     print("  RUNNING DOCLENS-AI INTEGRATION & COMPATIBILITY SUITE    ")
@@ -95,6 +112,7 @@ def run_integration_suite():
     test_2_upload_response_backward_compatibility()
     test_3_navigator_response_integrity()
     test_4_research_report_generation()
+    test_5_extended_pdf_generation()
     print("\n==========================================================")
     print("  ALL INTEGRATION TESTS PASSED CLEANLY! SYSTEM IS GREEN.   ")
     print("==========================================================")

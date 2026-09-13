@@ -101,19 +101,13 @@ class DocumentStructureService:
         candidates: List[Dict[str, Any]] = []
         seen_headers = set()
 
-        # Signal 1 & 2: Parse page text via pymupdf4llm / fitz for markdown & numbering
+        # Collect page texts from pymupdf4llm as well as direct fitz page text
         try:
             m_chunks = pymupdf4llm.to_markdown(doc, page_chunks=True)
         except Exception:
             m_chunks = []
 
-        header_regex = re.compile(r"^(#{1,6})\s+(.+)$")
-        # Handles 1., 1.1, 1.1.1, 1.0, 2.3.4.1, Appendix A, A.1, Section 1
-        numbering_regex = re.compile(
-            r"^(?:(?:Section|Chapter|Appendix)\s+([A-Z0-9]+)|(\d+(?:\.\d+)*|[A-Z]\.\d+(?:\.\d+)*))\s*[:\.\-]?\s+(.+)$",
-            re.IGNORECASE
-        )
-
+        page_texts: List[Tuple[int, str]] = []
         if m_chunks:
             for idx, chunk in enumerate(m_chunks):
                 p_num = idx + 1
@@ -122,54 +116,78 @@ class DocumentStructureService:
                     text_content = chunk.get("text", "")
                 else:
                     text_content = str(chunk)
+                page_texts.append((p_num, text_content))
 
-                lines = text_content.split("\n")
-                for line in lines:
-                    line_str = line.strip()
-                    if not line_str or len(line_str) < 2:
-                        continue
+        # Also append standard fitz page texts to cover single-block text insertions
+        for p_idx in range(len(doc)):
+            p_num = p_idx + 1
+            raw_t = doc.load_page(p_idx).get_text("text")
+            if raw_t:
+                page_texts.append((p_num, raw_t))
 
-                    # Check Signal 1: Markdown Header
-                    m_head = header_regex.match(line_str)
-                    if m_head:
-                        hashes, h_title = m_head.groups()
-                        clean_title = h_title.strip()
-                        lvl = len(hashes)
-                        key = (p_num, clean_title.lower())
-                        if clean_title and key not in seen_headers:
-                            seen_headers.add(key)
-                            candidates.append({
-                                "title": clean_title,
-                                "level": min(lvl, 6),
-                                "page": p_num,
-                                "source": "markdown",
-                                "confidence": 0.95
-                            })
-                        continue
+        header_regex = re.compile(r"^(#{1,6})\s+(.+)$")
+        # Handles 1., 1.1, 1.1.1, 1.0, 2.3.4.1, Appendix A, A.1, Section 1
+        numbering_regex = re.compile(
+            r"^(?:(?:Section|Chapter|Appendix)\s+([A-Z0-9]+)|(\d+(?:\.\d+)*|[A-Z]\.\d+(?:\.\d+)*))\s*[:\.\-]?\s+(.+)$",
+            re.IGNORECASE
+        )
 
-                    # Check Signal 2: Numbering Pattern
-                    m_num = numbering_regex.match(line_str)
-                    if m_num:
-                        app_num, std_num, h_title = m_num.groups()
-                        num_str = std_num or app_num or ""
-                        clean_title = line_str.strip()
-                        
-                        # Calculate level based on number of dots (e.g. 1 -> L1, 1.1 -> L2, 1.1.1 -> L3)
-                        dots = num_str.count(".")
-                        lvl = min(dots + 1, 6)
-                        if num_str and not std_num:
-                            lvl = 1 # Appendix or Section prefix defaults to L1
+        for p_num, text_content in page_texts:
+            lines = text_content.split("\n")
+            for line in lines:
+                line_str = line.strip()
+                if not line_str or len(line_str) < 2:
+                    continue
 
-                        key = (p_num, clean_title.lower())
-                        if clean_title and key not in seen_headers:
-                            seen_headers.add(key)
-                            candidates.append({
-                                "title": clean_title,
-                                "level": lvl,
-                                "page": p_num,
-                                "source": "numbering",
-                                "confidence": 0.90
-                            })
+                # Check Signal 1: Markdown Header
+                m_head = header_regex.match(line_str)
+                if m_head:
+                    hashes, h_title = m_head.groups()
+                    clean_title = h_title.strip()
+                    lvl = len(hashes)
+                    
+                    # Refine level if title contains an explicit numbering pattern (e.g. # 2.3.4.1 -> Level 4)
+                    m_num_check = numbering_regex.match(clean_title)
+                    if m_num_check:
+                        app_num, std_num, _ = m_num_check.groups()
+                        if std_num:
+                            lvl = min(std_num.count(".") + 1, 6)
+
+                    key = (p_num, clean_title.lower())
+                    if clean_title and key not in seen_headers:
+                        seen_headers.add(key)
+                        candidates.append({
+                            "title": clean_title,
+                            "level": min(lvl, 6),
+                            "page": p_num,
+                            "source": "markdown",
+                            "confidence": 0.95
+                        })
+                    continue
+
+                # Check Signal 2: Numbering Pattern
+                m_num = numbering_regex.match(line_str)
+                if m_num:
+                    app_num, std_num, h_title = m_num.groups()
+                    num_str = std_num or app_num or ""
+                    clean_title = line_str.strip()
+                    
+                    # Calculate level based on number of dots (e.g. 1 -> L1, 1.1 -> L2, 1.1.1 -> L3)
+                    dots = num_str.count(".")
+                    lvl = min(dots + 1, 6)
+                    if num_str and not std_num:
+                        lvl = 1 # Appendix or Section prefix defaults to L1
+
+                    key = (p_num, clean_title.lower())
+                    if clean_title and key not in seen_headers:
+                        seen_headers.add(key)
+                        candidates.append({
+                            "title": clean_title,
+                            "level": lvl,
+                            "page": p_num,
+                            "source": "numbering",
+                            "confidence": 0.90
+                        })
 
         # Signal 3: Embedded Table of Contents (TOC)
         toc = doc.get_toc()
@@ -293,10 +311,27 @@ class DocumentStructureService:
         # Ensure chronological ordering by page and original discovery index
         raw_candidates.sort(key=lambda x: (x["page"]))
 
-        # Deduplicate consecutive exact identical titles on same page
+        # Deduplicate candidates on same page, preferring shorter clean heading titles over long paragraph strings
         deduped: List[Dict[str, Any]] = []
         for cand in raw_candidates:
-            if not deduped or not (deduped[-1]["title"] == cand["title"] and deduped[-1]["page"] == cand["page"]):
+            is_redundant = False
+            for i, prev in enumerate(deduped):
+                if prev["page"] == cand["page"]:
+                    p_t = prev["title"].strip()
+                    c_t = cand["title"].strip()
+                    if p_t == c_t:
+                        is_redundant = True
+                        break
+                    elif c_t.startswith(p_t) and len(c_t) > len(p_t):
+                        # Keep shorter exact heading
+                        is_redundant = True
+                        break
+                    elif p_t.startswith(c_t) and len(p_t) > len(c_t):
+                        # Replace longer string with shorter exact heading
+                        deduped[i] = cand
+                        is_redundant = True
+                        break
+            if not is_redundant:
                 deduped.append(cand)
 
         structured_nodes: List[Dict[str, Any]] = []

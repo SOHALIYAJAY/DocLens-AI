@@ -20,6 +20,7 @@ from reportlab.lib import colors
 import fitz
 from models.schemas import NavigatorResponse
 from services.document_structure_service import document_structure_service
+from services.table_service import table_service
 
 def extract_links_from_pdf_bytes(file_bytes: bytes) -> list:
     """Extracts interactive hyperlinks and plain text URLs from PDF bytes."""
@@ -331,6 +332,58 @@ def create_navigator_pdf(
                 
         story.append(Spacer(1, 10))
 
+    # --- EXTRACTED DOCUMENT TABLES SECTION ---
+    extracted_tables = table_service.get_tables()
+    if extracted_tables:
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("EXTRACTED DOCUMENT TABLES", h1_style))
+        story.append(HRFlowable(width="100%", thickness=1.5, color=c_secondary, spaceAfter=10, spaceBefore=2))
+
+        table_hdr_style = ParagraphStyle('TblHdr', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8.5, leading=11, textColor=colors.white)
+        table_cell_style = ParagraphStyle('TblCell', parent=styles['Normal'], fontName='Helvetica', fontSize=8.5, leading=11, textColor=c_text)
+
+        for idx, tbl in enumerate(extracted_tables[:5]):
+            caption = html.escape(tbl.get("caption") or f"Document Table {idx + 1}")
+            page_num = tbl.get("page_number", 1)
+            headers = tbl.get("headers", [])
+            rows = tbl.get("rows", [])
+
+            tbl_title_p = Paragraph(f"<b>Table {idx + 1}: {caption}</b> <font color='#0284c7'><b>[Page {page_num}]</b></font>", item_title_style)
+            story.append(tbl_title_p)
+            story.append(Spacer(1, 4))
+
+            if headers and rows:
+                header_p_list = [Paragraph(f"<b>{html.escape(str(h))}</b>", table_hdr_style) for h in headers]
+                table_matrix = [header_p_list]
+
+                for row_data in rows[:8]:
+                    row_p_list = [Paragraph(html.escape(str(cell)), table_cell_style) for cell in row_data]
+                    table_matrix.append(row_p_list)
+
+                num_cols = max(len(headers), 1)
+                col_w = 468.0 / num_cols
+                col_widths = [col_w] * num_cols
+
+                reportlab_tbl = Table(table_matrix, colWidths=col_widths)
+                reportlab_tbl.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1e293b')),
+                    ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+                    ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                    ('TOPPADDING', (0,0), (-1,-1), 5),
+                    ('BOTTOMPADDING', (0,0), (-1,-1), 5),
+                    ('LEFTPADDING', (0,0), (-1,-1), 6),
+                    ('RIGHTPADDING', (0,0), (-1,-1), 6),
+                    ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#cbd5e1')),
+                    ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#f8fafc')])
+                ]))
+                story.append(reportlab_tbl)
+                story.append(Spacer(1, 8))
+            elif tbl.get("raw_text"):
+                raw_p = Paragraph(html.escape(tbl["raw_text"]).replace("\n", "<br/>"), code_text_style)
+                story.append(raw_p)
+                story.append(Spacer(1, 8))
+
+        story.append(Spacer(1, 6))
 
     # --- NEW SECTION: DOCUMENT STRUCTURE & INSIGHTS ---
     manifest = structure_manifest or document_structure_service.get_current_structure()
@@ -342,23 +395,142 @@ def create_navigator_pdf(
         # 1. Document Structure Tree
         story.append(Paragraph("1. Document Structure Hierarchy", h2_style))
         flat_nodes = manifest.get("flat_nodes", [])
-        
-        for node in flat_nodes[:18]: # Concise display of top structural nodes
+
+        # Sanitize and deduplicate nodes for clean rendering
+        render_nodes = []
+        seen_keys = set()
+        for node in flat_nodes:
+            raw_t = node.get("title", "").strip()
+            clean_t = re.sub(r'[\ufffd\u25a0\x00-\x1f]', '', raw_t)
+            clean_t = re.sub(r'^[\#\*\•\-\–\—\s]+', '', clean_t).strip()
+            if clean_t.endswith("-"):
+                clean_t = clean_t[:-1].strip()
+
+            norm_k = re.sub(r'^\d+(\.\d+)*\s*', '', clean_t.lower()).strip()
+            if not norm_k:
+                norm_k = clean_t.lower()
+
+            key = (node.get("page_start", 1), norm_k)
+            if key not in seen_keys and len(clean_t) > 1:
+                seen_keys.add(key)
+                n_copy = dict(node)
+                n_copy["title"] = clean_t
+                render_nodes.append(n_copy)
+
+        style_l1 = ParagraphStyle('TreeL1', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=10, leading=13, textColor=colors.HexColor('#0f172a'))
+        style_l2 = ParagraphStyle('TreeL2', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=9.5, leading=12, textColor=colors.HexColor('#1e293b'))
+        style_l3 = ParagraphStyle('TreeL3', parent=styles['Normal'], fontName='Helvetica', fontSize=9, leading=12, textColor=colors.HexColor('#334155'))
+        style_meta = ParagraphStyle('TreeMeta', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=8.5, leading=11, alignment=2, textColor=colors.HexColor('#1e293b'))
+
+        tree_rows = []
+        for node in render_nodes[:16]:
             lvl = node.get("level", 1)
-            indent = "&nbsp;" * ((lvl - 1) * 6)
-            title = html.escape(str(node.get("title", "")))
+            title_str = html.escape(str(node.get("title", "")))
             span = node.get("relationships", {}).get("page_span", f"Page {node.get('page_start', 1)}")
             conf = int(node.get("confidence", 0.80) * 100)
             source = html.escape(str(node.get("source", "layout")).upper())
 
-            tree_line = f"{indent}<b>• {title}</b> <font color='#0284c7'>[{span}]</font> <font color='#64748b' size='8'>[Conf: {conf}% - {source}]</font>"
-            story.append(Paragraph(tree_line, tree_node_style))
-            story.append(Spacer(1, 3))
+            if lvl == 1:
+                title_p = Paragraph(f"<font color='#0284c7'>■</font> <b>{title_str}</b>", style_l1)
+            elif lvl == 2:
+                title_p = Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;<font color='#0284c7'>├─</font> <b>{title_str}</b>", style_l2)
+            else:
+                title_p = Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<font color='#64748b'>└─</font> {title_str}", style_l3)
 
-        story.append(Spacer(1, 8))
+            meta_p = Paragraph(
+                f"<font color='#0369a1'><b>[{span}]</b></font> <font color='#334155'><b>[{conf}% {source}]</b></font>",
+                style_meta
+            )
+            tree_rows.append([title_p, meta_p])
 
-        # 2. Key Concepts
-        story.append(Paragraph("2. Key Concepts", h2_style))
+        if tree_rows:
+            tree_table = Table(tree_rows, colWidths=[318, 150])
+            tree_table.setStyle(TableStyle([
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('LEFTPADDING', (0,0), (-1,-1), 4),
+                ('RIGHTPADDING', (0,0), (-1,-1), 4),
+                ('LINEBELOW', (0,0), (-1,-1), 0.5, colors.HexColor('#f1f5f9')),
+            ]))
+            story.append(tree_table)
+
+        story.append(Spacer(1, 10))
+
+        # 2. Document Structural Architecture Map
+        story.append(Paragraph("2. Document Structural Architecture Map", h2_style))
+
+        arch_tree = manifest.get("hierarchy_tree", [])
+        if not arch_tree and render_nodes:
+            arch_tree = []
+            curr_parent = None
+            for n in render_nodes:
+                lvl = n.get("level", 1)
+                if lvl == 1 or not arch_tree:
+                    curr_parent = {
+                        "title": n.get("title"),
+                        "page_start": n.get("page_start", 1),
+                        "subtopics": []
+                    }
+                    arch_tree.append(curr_parent)
+                elif curr_parent and lvl >= 2:
+                    curr_parent["subtopics"].append({
+                        "title": n.get("title"),
+                        "level": lvl,
+                        "page_start": n.get("page_start", 1)
+                    })
+
+        arch_matrix = []
+        for idx, main_node in enumerate(arch_tree[:5]):
+            t_title = html.escape(str(main_node.get("title", "")))
+            t_page = main_node.get("page_start", main_node.get("page", 1))
+            subtopics = main_node.get("children", main_node.get("subtopics", []))
+
+            node_hdr_html = (
+                f"<b><font color='#0284c7'>[MODULE {idx + 1}]</font> {t_title.upper()}</b> "
+                f"<font color='#0369a1'><b>[Page {t_page}]</b></font>"
+            )
+            node_hdr_p = Paragraph(node_hdr_html, item_title_style)
+
+            sub_lines = []
+            if subtopics:
+                for s_idx, sub in enumerate(subtopics[:4]):
+                    sub_t = html.escape(str(sub.get("title", "")))
+                    sub_p = sub.get("page_start", sub.get("page", t_page))
+                    s_lvl = sub.get("level", 2)
+                    is_last = (s_idx == len(subtopics[:4]) - 1)
+                    branch_symbol = "└──" if is_last else "├──"
+
+                    if s_lvl == 2:
+                        sub_lines.append(f"<font color='#0284c7'>{branch_symbol}</font> <b>{sub_t}</b> <font color='#475569'>[Page {sub_p}]</font>")
+                    else:
+                        sub_lines.append(f"<font color='#64748b'>│   {branch_symbol}</font> {sub_t} <font color='#64748b'>[Page {sub_p}]</font>")
+            else:
+                sub_lines.append("<i><font color='#64748b'>└── (Self-contained structural topic)</font></i>")
+
+            sub_body_html = "<br/>".join(sub_lines)
+            sub_body_p = Paragraph(sub_body_html, item_desc_style)
+
+            arch_matrix.append([node_hdr_p])
+            arch_matrix.append([sub_body_p])
+
+        if arch_matrix:
+            arch_table = Table(arch_matrix, colWidths=[468])
+            arch_table.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#f8fafc')),
+                ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#cbd5e1')),
+                ('INNERGRID', (0,0), (-1,-1), 0.5, colors.HexColor('#e2e8f0')),
+                ('TOPPADDING', (0,0), (-1,-1), 4),
+                ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+                ('LEFTPADDING', (0,0), (-1,-1), 8),
+                ('RIGHTPADDING', (0,0), (-1,-1), 8),
+            ]))
+            story.append(arch_table)
+
+        story.append(Spacer(1, 10))
+
+        # 3. Key Concepts
+        story.append(Paragraph("3. Key Concepts", h2_style))
         concepts_p = Paragraph(
             "<b>Key Concepts (Distinct from Structural Topics):</b> "
             "Extracted domain terminology, formulas, and definitions active within document scope.",
@@ -367,15 +539,15 @@ def create_navigator_pdf(
         story.append(concepts_p)
         story.append(Spacer(1, 8))
 
-        # 3. Important Sections
-        story.append(Paragraph("3. Important Sections Identified", h2_style))
+        # 4. Important Sections
+        story.append(Paragraph("4. Important Sections Identified", h2_style))
         imp_sections = [n.get("title") for n in flat_nodes if n.get("level") == 1]
         imp_str = ", ".join([html.escape(s) for s in imp_sections[:6]]) if imp_sections else "General Analysis"
         story.append(Paragraph(f"Primary structural sections: <b>{imp_str}</b>", item_desc_style))
         story.append(Spacer(1, 8))
 
-        # 4. Document Insights
-        story.append(Paragraph("4. Document Insights & Synthesis", h2_style))
+        # 5. Document Insights
+        story.append(Paragraph("5. Document Insights & Synthesis", h2_style))
         insights_data = [
             [Paragraph("<b>Major Themes:</b>", meta_label_style), Paragraph("Structured domain analysis, layout preservation, and component mapping.", meta_val_style)],
             [Paragraph("<b>Key Findings:</b>", meta_label_style), Paragraph(f"Identified {manifest.get('total_topics', 0)} structural topics across {manifest.get('total_pages', 1)} pages.", meta_val_style)],

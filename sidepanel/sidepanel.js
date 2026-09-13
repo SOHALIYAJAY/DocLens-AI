@@ -1151,6 +1151,77 @@ function handleQuickBookmarksToggle() {
 }
 
 /**
+ * Downloads the AI Navigator / Executive Summary PDF document.
+ */
+function handleDownloadPdfNav() {
+  logAction("Download PDF triggered from navbar");
+  const btn = document.getElementById("btn-download-pdf-nav");
+  let icon = btn ? btn.querySelector("i") : null;
+  const originalClass = icon ? icon.className : "fa-solid fa-download";
+
+  if (icon) icon.className = "fa-solid fa-spinner fa-spin";
+
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    const activeTab = tabs[0];
+    const pdfUrl = activeTab?.url;
+
+    chrome.runtime.sendMessage({
+      action: "DOWNLOAD_NAVIGATOR_PDF",
+      payload: { pdfUrl: pdfUrl }
+    }, (response) => {
+      if (icon) icon.className = originalClass;
+
+      if (chrome.runtime.lastError || !response || !response.success) {
+        const errorMsg = chrome.runtime.lastError?.message || response?.error || "Unknown error";
+        console.error("Failed to download PDF:", errorMsg);
+        showToast("Failed to download PDF: " + errorMsg, true);
+        return;
+      }
+
+      try {
+        let base64Data = null;
+        if (response && response.data) {
+          if (response.data.data && response.data.data.pdf_base64) {
+            base64Data = response.data.data.pdf_base64;
+          } else {
+            base64Data = response.data.pdf_base64 || response.data;
+          }
+        }
+        if (!base64Data && response) {
+          base64Data = response.pdf_base64;
+        }
+
+        if (!base64Data || typeof base64Data !== "string") {
+          throw new Error("Invalid or missing PDF data in response.");
+        }
+
+        if (base64Data.includes(",")) {
+          base64Data = base64Data.split(",")[1];
+        }
+        base64Data = base64Data.trim();
+
+        chrome.downloads.download({
+          url: "data:application/pdf;base64," + base64Data,
+          filename: "AI_Executive_Summary.pdf",
+          saveAs: true
+        }, (downloadId) => {
+          if (chrome.runtime.lastError) {
+            console.error("Download failed:", chrome.runtime.lastError.message);
+            showToast("Failed to save PDF: " + chrome.runtime.lastError.message, true);
+          } else {
+            logAction("Download started successfully", { downloadId });
+            showToast("✅ Executive PDF Summary Downloaded!");
+          }
+        });
+      } catch (e) {
+        console.error("Error initiating download:", e);
+        showToast("Download error: " + e.message, true);
+      }
+    });
+  });
+}
+
+/**
  * Attaches all button and input event listeners.
  */
 function bindEventListeners() {
@@ -1182,6 +1253,8 @@ function bindEventListeners() {
   document.getElementById("btn-refresh-sidebar")?.addEventListener("click", () => handleRefreshSidebar("btn-refresh-sidebar"));
   document.getElementById("btn-refresh-bookmarks")?.addEventListener("click", () => handleRefreshSidebar("btn-refresh-bookmarks"));
   document.getElementById("btn-quick-bookmarks")?.addEventListener("click", handleQuickBookmarksToggle);
+  document.getElementById("btn-download-pdf-nav")?.addEventListener("click", handleDownloadPdfNav);
+  document.getElementById("btn-dropdown-download-pdf")?.addEventListener("click", handleDownloadPdfNav);
   document.getElementById("btn-bookmark-page")?.addEventListener("click", handleBookmarkPage);
   document.getElementById("bookmark-search-input")?.addEventListener("input", () => renderBookmarks());
   document.getElementById("bookmark-sort-select")?.addEventListener("change", () => renderBookmarks());

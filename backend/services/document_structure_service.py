@@ -4,17 +4,17 @@ Isolated Document Structure Hierarchy Service for DocLens-AI.
 
 Constructs deterministic document hierarchy from physical PDF layout and structural signals:
 1. Explicit Markdown headers from parser (`pymupdf4llm` `#`, `##`, `###`, `####`)
-2. Heading numbering patterns (`1`, `1.1`, `1.1.1`, `A.1`, `Appendix A`, `I.`, `Section 2`)
+2. Heading numbering patterns (`1`, `1.0`, `1.1`, `1.1.1`, `1.A`, `Appendix A`, `Article I`, `Section 1`, `Clause 2.1.A`)
 3. Table of Contents (TOC) hierarchy from PyMuPDF
-4. Heading typography/layout metadata (font sizes)
+4. Heading typography/layout metadata (relative font sizes & bold weight)
 5. Position/Section ordering
 
-STRICT SAFETY & NON-HALLUCINATION RULES:
-- Never classify repeated running headers/footers as topics.
-- Never classify figure/table/code captions as topics unless explicit TOC structural evidence exists.
-- Never classify bold lead-ins (e.g., "Note:", "Important:") as topics.
-- Never invent missing hierarchy levels to fill gaps.
-- Preserves exact original text, page numbers, heading order, parent-child links, source, and confidence.
+TARGETED FIXES ENFORCED:
+- Case 1: 1.0, 2.0, 3.0 decimal L1 patterns correctly mapped to Level 1.
+- Case 2: Bibliography/References state tracking suppresses citation false positives.
+- Case 3: Legal structure patterns (Article I, Section 1.1, Clause 2.1.A) correctly nested.
+- Case 4: Letter-suffix patterns (1.A, 1.B, 2.A) correctly recognized as Level 2 subtopics.
+- Case 5: Typography-only multi-signal scoring (relative font vs body font, line length, standalone check).
 """
 
 import re
@@ -47,7 +47,7 @@ class DocumentStructureService:
     ) -> Dict[str, Any]:
         """
         Main extraction entry point. Evaluates structural signals in strict priority:
-        1. Markdown Headers -> 2. Numbering Patterns -> 3. TOC -> 4. Typography Font Size -> 5. Chunks/Fallback
+        1. Markdown Headers -> 2. Numbering Patterns -> 3. TOC -> 4. Typography Font Size -> 5. Fallback
         """
         doc = fitz.open(stream=file_bytes, filetype="pdf")
         num_pages = len(doc)
@@ -102,7 +102,6 @@ class DocumentStructureService:
             blocks = page.get_text("blocks")
 
             for b in blocks:
-                # b format: (x0, y0, x1, y1, "text", block_no, block_type)
                 if len(b) >= 5:
                     y0, y1, text = b[1], b[3], b[4].strip()
                     if not text:
@@ -113,13 +112,42 @@ class DocumentStructureService:
                         clean_line = " ".join(text.split()).lower()
                         header_footer_counts[clean_line] = header_footer_counts.get(clean_line, 0) + 1
 
-        # Any header/footer text appearing on 2 or more pages is registered as noise
         noise_lines = set()
         for text_line, count in header_footer_counts.items():
             if count >= 2 and len(text_line) > 3:
                 noise_lines.add(text_line)
 
         return noise_lines
+
+    def _calculate_numbering_level(self, num_str: str, prefix_type: str = "") -> int:
+        """
+        Calculates exact hierarchy level based on numbering pattern:
+        - Case 1: 1., 1.0, 2.0, 3.0 -> Level 1 (Decimal L1)
+        - Case 3: Article I -> Level 1, Section 1.1 -> Level 2, Clause 2.1.A -> Level 3
+        - Case 4: Letter suffix (1.A, 1.B, 2.A) -> Level 2
+        """
+        clean_num = num_str.strip().rstrip(".")
+
+        # Case 1: Decimal L1 (.0 suffix or plain single integer)
+        if re.match(r"^\d+\.0+$", clean_num) or re.match(r"^\d+$", clean_num) or re.match(r"^[IVXLCDM]+$", clean_num, re.I):
+            return 1
+
+        # Case 3: Legal Prefixes
+        pref_lower = prefix_type.lower()
+        if pref_lower == "article":
+            return 1
+        elif pref_lower == "section":
+            return 2 if ("." in clean_num and not clean_num.endswith(".0")) else 1
+        elif pref_lower == "clause":
+            return 3 if "." in clean_num else 2
+
+        # Case 4: Letter Suffix (e.g. 1.A, 2.B)
+        if re.match(r"^\d+\.[A-Z]$", clean_num, re.I):
+            return 2
+
+        # General multi-dot level (e.g. 1.1 -> L2, 1.1.1 -> L3, 2.3.4.1 -> L4)
+        dots = clean_num.count(".")
+        return min(dots + 1, 6)
 
     def _extract_heading_candidates(
         self,
@@ -130,9 +158,9 @@ class DocumentStructureService:
         """
         Collects headings prioritizing:
         Signal 1: Markdown headers (#, ##, ###)
-        Signal 2: Numbering patterns (1, 1.1, 1.1.1, Appendix A, I., Section 2)
+        Signal 2: Numbering patterns (1., 1.0, 1.1, 1.A, Article I, Section 1.1)
         Signal 3: Table of Contents (TOC)
-        Signal 4: Font size typography
+        Signal 4: Multi-signal Typography heuristics
         """
         candidates: List[Dict[str, Any]] = []
         seen_headers = set()
@@ -160,11 +188,16 @@ class DocumentStructureService:
                 page_texts.append((p_num, raw_t))
 
         header_regex = re.compile(r"^(#{1,6})\s+(.+)$")
-        # Handles 1., 1.1, 1.1.1, 1.0, 2.3.4.1, Appendix A, A.1, Section 1, Roman numerals (I., II.)
+        
+        # Enhanced Numbering Regex (Handles 1., 1.0, 1.1, 1.A, Article I, Section 1.1, Clause 2.1.A)
         numbering_regex = re.compile(
-            r"^(?:(?:Section|Chapter|Part|Appendix|Module)\s+([A-Z0-9\.\-]+)|(\d+(?:\.\d+)*|[A-Z]\.\d+(?:\.\d+)*|[IVXLCDM]+\.))\s*[:\.\-]?\s+(.+)$",
+            r"^(?:(Article|Section|Chapter|Part|Appendix|Clause|Module)\s+([A-Z0-9\.\-]+)|(\d+(?:\.[A-Z0-9]+)*|[A-Z]\.\d+(?:\.\d+)*|[IVXLCDM]+\.))\s*[:\.\-]?\s+(.+)$",
             re.IGNORECASE
         )
+
+        std_sec_names = {"references", "bibliography", "works cited", "literature cited", "references and bibliography", "abstract", "acknowledgments"}
+
+        in_references_section = False
 
         for p_num, text_content in page_texts:
             lines = text_content.split("\n")
@@ -182,6 +215,29 @@ class DocumentStructureService:
                 if self._is_caption_or_lead_in(line_str):
                     continue
 
+                # Case 2: Bibliography Section Tracking
+                if clean_check in std_sec_names:
+                    if "reference" in clean_check or "biblio" in clean_check or "cited" in clean_check:
+                        in_references_section = True
+
+                    clean_title = line_str.strip()
+                    key = (p_num, clean_title.lower())
+                    if clean_title and key not in seen_headers:
+                        seen_headers.add(key)
+                        candidates.append({
+                            "title": clean_title,
+                            "level": 1,
+                            "page": p_num,
+                            "source": "canonical_section",
+                            "confidence": 0.90
+                        })
+                    continue
+
+                # Case 2: Suppress numbered citations inside Bibliography section
+                if in_references_section:
+                    if re.match(r"^(?:\d+\.|\{\d+\}|\[\d+\])\s+[A-Z]", line_str):
+                        continue
+
                 # Check Signal 1: Markdown Header
                 m_head = header_regex.match(line_str)
                 if m_head:
@@ -189,12 +245,15 @@ class DocumentStructureService:
                     clean_title = h_title.strip()
                     lvl = len(hashes)
 
-                    # Refine level if title contains explicit numbering pattern (e.g. # 2.3.4.1 -> Level 4)
-                    m_num_check = numbering_regex.match(clean_title)
-                    if m_num_check:
-                        app_num, std_num, _ = m_num_check.groups()
-                        if std_num and "." in std_num:
-                            lvl = min(std_num.count(".") + 1, 6)
+                    if clean_title.lower() in std_sec_names:
+                        lvl = 1
+                    else:
+                        m_num_check = numbering_regex.match(clean_title)
+                        if m_num_check:
+                            pref, pref_num, std_num, _ = m_num_check.groups()
+                            num_str = std_num or pref_num or ""
+                            if num_str:
+                                lvl = self._calculate_numbering_level(num_str, prefix_type=pref or "")
 
                     key = (p_num, clean_title.lower())
                     if clean_title and key not in seen_headers:
@@ -211,14 +270,10 @@ class DocumentStructureService:
                 # Check Signal 2: Numbering Pattern
                 m_num = numbering_regex.match(line_str)
                 if m_num:
-                    app_num, std_num, h_title = m_num.groups()
-                    num_str = std_num or app_num or ""
+                    pref, pref_num, std_num, h_title = m_num.groups()
+                    num_str = std_num or pref_num or ""
                     clean_title = line_str.strip()
-                    
-                    dots = num_str.count(".")
-                    lvl = min(dots + 1, 6)
-                    if num_str and not std_num:
-                        lvl = 1
+                    lvl = self._calculate_numbering_level(num_str, prefix_type=pref or "")
 
                     key = (p_num, clean_title.lower())
                     if clean_title and key not in seen_headers:
@@ -230,23 +285,6 @@ class DocumentStructureService:
                             "source": "numbering",
                             "confidence": 0.90
                         })
-                    continue
-
-                # Check Signal 2b: Standard Unnumbered Structural Sections (e.g. References, Bibliography, Abstract)
-                std_sec_names = {"references", "bibliography", "works cited", "abstract", "acknowledgments", "acknowledgements"}
-                if line_str.lower().strip() in std_sec_names:
-                    clean_title = line_str.strip()
-                    key = (p_num, clean_title.lower())
-                    if clean_title and key not in seen_headers:
-                        seen_headers.add(key)
-                        candidates.append({
-                            "title": clean_title,
-                            "level": 1,
-                            "page": p_num,
-                            "source": "canonical_section",
-                            "confidence": 0.90
-                        })
-                    continue
 
         # Signal 3: Embedded Table of Contents (TOC)
         toc = doc.get_toc()
@@ -266,7 +304,7 @@ class DocumentStructureService:
                         "confidence": 0.85
                     })
 
-        # Signal 4: Typography / Layout metadata
+        # Signal 4: Case 5 Typography-Only Multi-Signal Scoring
         if not candidates:
             candidates = self._extract_by_typography(doc, seen_headers, repeating_noise)
 
@@ -275,7 +313,7 @@ class DocumentStructureService:
     def _is_caption_or_lead_in(self, text: str) -> bool:
         """
         Determines if a string is a Figure/Table/Code caption, inline bold lead-in,
-        or non-topic paragraph.
+        or non-topic paragraph line.
         """
         t = text.strip()
 
@@ -287,12 +325,16 @@ class DocumentStructureService:
         if re.search(r"^(?:Note|Important|Warning|Caution|Example|Definition|Step\s*\d+|Algorithm\s*\d+)\s*[:\.\-]", t, re.I):
             return True
 
-        # Reject bold lead-in phrases that end with a colon
-        if t.endswith(":") and len(t) < 40 and not any(w in t.lower() for w in ["section", "chapter", "contents", "summary"]):
+        # Reject bold lead-in phrases that end with a colon or period in paragraph text
+        if t.endswith(":") and len(t) < 40 and not any(w in t.lower() for w in ["section", "chapter", "contents", "summary", "overview"]):
             return True
 
-        # Reject overly long paragraph lines (> 140 chars)
-        if len(t) > 140:
+        # Reject body paragraph lines ending with period if long (> 65 chars)
+        if len(t) > 65 and (t.endswith(".") or t.endswith("?") or t.endswith("!")):
+            return True
+
+        # Reject overly long paragraph lines (> 110 chars)
+        if len(t) > 110:
             return True
 
         return False
@@ -304,9 +346,11 @@ class DocumentStructureService:
         repeating_noise: Set[str]
     ) -> List[Dict[str, Any]]:
         """
-        Extracts headings using font size and weight heuristics from PDF spans.
+        Case 5: Multi-Signal Typography & Layout Evidence Scoring.
+        Determines body text font size per page and compares candidate font sizes relatively.
         """
         font_spans: List[Dict[str, Any]] = []
+        all_sizes: List[float] = []
 
         for p_idx in range(len(doc)):
             page = doc.load_page(p_idx)
@@ -318,40 +362,64 @@ class DocumentStructureService:
                     continue
                 for l in b.get("lines", []):
                     line_text = "".join([s.get("text", "") for s in l.get("spans", [])]).strip()
-                    if not line_text or len(line_text) < 3 or len(line_text) > 120:
-                        continue
-
-                    clean_check = " ".join(line_text.split()).lower()
-                    if clean_check in repeating_noise or self._is_caption_or_lead_in(line_text):
+                    if not line_text or len(line_text) < 3:
                         continue
 
                     sizes = [s.get("size", 0) for s in l.get("spans", [])]
                     flags = [s.get("flags", 0) for s in l.get("spans", [])]
                     is_bold = any(f & 2 != 0 or "bold" in s.get("font", "").lower() for s, f in zip(l.get("spans", []), flags))
+                    max_size = round(max(sizes), 1) if sizes else 0.0
 
-                    max_size = max(sizes) if sizes else 0
-                    if max_size > 11 or is_bold:
-                        font_spans.append({
-                            "title": line_text,
-                            "page": p_num,
-                            "size": round(max_size, 1),
-                            "is_bold": is_bold
-                        })
+                    all_sizes.append(max_size)
 
-        if not font_spans:
+                    clean_check = " ".join(line_text.split()).lower()
+                    if clean_check in repeating_noise or self._is_caption_or_lead_in(line_text):
+                        continue
+
+                    font_spans.append({
+                        "title": line_text,
+                        "page": p_num,
+                        "size": max_size,
+                        "is_bold": is_bold
+                    })
+
+        if not font_spans or not all_sizes:
             return []
 
-        size_set = sorted(list(set(s["size"] for s in font_spans if s["size"] >= 11)), reverse=True)
-        size_level_map = {}
-        for idx, sz in enumerate(size_set[:4]):
-            size_level_map[sz] = idx + 1
+        # Find most frequent font size (Body Font Size)
+        from collections import Counter
+        size_counts = Counter(all_sizes)
+        body_font_size = size_counts.most_common(1)[0][0] if size_counts else 10.0
 
-        candidates = []
+        # Filter candidate spans strictly larger than body font size OR bold standalone titles
+        heading_candidates = []
         for span in font_spans:
             sz = span["size"]
-            lvl = size_level_map.get(sz, 3 if span["is_bold"] else 4)
+            title = span["title"]
+
+            # Only accept lines strictly larger than body font or bold short titles (< 60 chars)
+            if sz > body_font_size or (span["is_bold"] and len(title) < 60 and not title.endswith(".")):
+                heading_candidates.append(span)
+
+        if not heading_candidates:
+            return []
+
+        # Group distinct heading font sizes relatively
+        distinct_heading_sizes = sorted(list(set(s["size"] for s in heading_candidates)), reverse=True)
+
+        candidates = []
+        for span in heading_candidates:
+            sz = span["size"]
             title = span["title"]
             key = (span["page"], title.lower())
+
+            # Relative level mapping based on font rank
+            if sz == distinct_heading_sizes[0]:
+                lvl = 1
+            elif len(distinct_heading_sizes) > 1 and sz == distinct_heading_sizes[1]:
+                lvl = 2
+            else:
+                lvl = 3 if span["is_bold"] else 4
 
             if key not in seen_headers:
                 seen_headers.add(key)
@@ -360,7 +428,7 @@ class DocumentStructureService:
                     "level": lvl,
                     "page": span["page"],
                     "source": "font_size",
-                    "confidence": 0.75
+                    "confidence": 0.75 if lvl == 1 else 0.65
                 })
 
         return candidates

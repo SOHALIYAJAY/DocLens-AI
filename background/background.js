@@ -181,6 +181,60 @@ function isPdfUrl(url) {
 }
 
 /**
+ * Cleanly extracts local file path or web URL from a PDF URL.
+ * Strips hash fragments (#page=...) and query parameters.
+ *
+ * @param {string | undefined | null} pdfUrl
+ * @returns {{ type: 'local', path: string } | { type: 'web', url: string } | null}
+ */
+function extractCleanPdfPath(pdfUrl) {
+  if (!pdfUrl || typeof pdfUrl !== "string") return null;
+
+  let url = pdfUrl;
+  if (url.includes("mhjfbmdgcfjbbpaeojofohoefgiehjai") && url.includes("url=")) {
+    try {
+      const urlObj = new URL(url);
+      const actualUrl = urlObj.searchParams.get("url");
+      if (actualUrl) url = actualUrl;
+    } catch (e) {
+      logMessage("Could not parse actual URL from Chrome viewer", e);
+    }
+  }
+
+  const cleanUrl = url.split("#")[0].split("?")[0].trim();
+  if (cleanUrl.toLowerCase().startsWith("file://")) {
+    let localPath = decodeURIComponent(cleanUrl);
+    if (localPath.startsWith("file:///")) {
+      localPath = localPath.substring(8);
+      if (!localPath.match(/^[a-zA-Z]:\//)) {
+        localPath = "/" + localPath;
+      }
+    } else if (localPath.startsWith("file://")) {
+      localPath = localPath.substring(7);
+    }
+    return { type: "local", path: localPath };
+  } else if (cleanUrl.toLowerCase().startsWith("http://") || cleanUrl.toLowerCase().startsWith("https://")) {
+    return { type: "web", url: url };
+  }
+  return null;
+}
+
+/**
+ * Helper to fetch backend API with user-friendly error messages if offline.
+ */
+async function fetchBackendApi(endpoint, options = {}) {
+  const url = `http://127.0.0.1:8000${endpoint.startsWith("/") ? "" : "/"}${endpoint}`;
+  try {
+    return await fetch(url, options);
+  } catch (err) {
+    if (err.name === "TypeError" && (err.message === "Failed to fetch" || err.message.includes("fetch"))) {
+      throw new Error("Cannot connect to the AI PDF Assistant backend server at http://127.0.0.1:8000. Please ensure the Python server is running (uvicorn main:app --reload).");
+    }
+    throw err;
+  }
+}
+
+/**
  * Safely retrieves the currently active tab in the current window.
  *
  * @returns {Promise<chrome.tabs.Tab | null>} Active tab or null if unavailable
@@ -480,57 +534,40 @@ async function handleExtractPdfNavigator() {
   logMessage("EXTRACT_PDF_NAVIGATOR triggered");
   const activeTab = await getActiveTab();
   
-  if (!activeTab || !isPdfUrl(activeTab.url)) {
+  const parsed = extractCleanPdfPath(activeTab?.url);
+  if (!parsed) {
     throw new Error("No active PDF found to generate navigator.");
   }
   
   try {
-    let pdfUrl = activeTab.url;
-    if (pdfUrl.includes("mhjfbmdgcfjbbpaeojofohoefgiehjai") && pdfUrl.includes("url=")) {
-      try {
-        const urlObj = new URL(pdfUrl);
-        const actualUrl = urlObj.searchParams.get("url");
-        if (actualUrl) {
-          pdfUrl = actualUrl;
-        }
-      } catch (e) {
-        logMessage("Could not parse actual URL from Chrome viewer", e);
-      }
-    }
-
-    if (pdfUrl.startsWith("file://")) {
-      logMessage("Local file detected for navigator. Using local path...", { pdfUrl });
-      let localPath = decodeURIComponent(pdfUrl);
-      if (localPath.startsWith("file:///")) {
-        localPath = localPath.substring(8);
-        if (!localPath.match(/^[a-zA-Z]:\//)) {
-          localPath = "/" + localPath;
-        }
-      }
-      
-      // Need a backend endpoint that accepts local path for navigator, 
-      // or we just read it locally in backend. Let's add that to backend next.
-      const res = await fetch("http://127.0.0.1:8000/generate-local-navigator", {
+    if (parsed.type === "local") {
+      logMessage("Local file detected for navigator. Using local path...", { path: parsed.path });
+      const res = await fetchBackendApi("/generate-local-navigator", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_path: localPath })
+        body: JSON.stringify({ file_path: parsed.path })
       });
       
       if (!res.ok) throw new Error(`Backend failed: ${res.statusText}`);
       const data = await res.json();
       return { success: true, data };
       
-    } else if (pdfUrl.startsWith("http")) {
-      logMessage("Web URL detected for navigator. Fetching PDF...", { pdfUrl });
+    } else if (parsed.type === "web") {
+      logMessage("Web URL detected for navigator. Fetching PDF...", { url: parsed.url });
       
-      const response = await fetch(pdfUrl);
+      let response;
+      try {
+        response = await fetch(parsed.url);
+      } catch (fetchErr) {
+        throw new Error(`Failed to fetch PDF from web URL (${parsed.url}): ${fetchErr.message}`);
+      }
       if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.statusText}`);
       
       const blob = await response.blob();
       const formData = new FormData();
       formData.append("file", blob, "document.pdf");
       
-      const res = await fetch("http://127.0.0.1:8000/generate-navigator", {
+      const res = await fetchBackendApi("/generate-navigator", {
         method: "POST",
         body: formData
       });
@@ -556,38 +593,17 @@ async function handleDownloadNavigatorPdf(payload) {
     const activeTab = await getActiveTab();
     pdfUrl = activeTab?.url;
   }
-  
-  if (!pdfUrl || !isPdfUrl(pdfUrl)) {
-    throw new Error("No active PDF found to download navigator.");
-  }
-  
-  try {
-    if (pdfUrl.includes("mhjfbmdgcfjbbpaeojofohoefgiehjai") && pdfUrl.includes("url=")) {
-      try {
-        const urlObj = new URL(pdfUrl);
-        const actualUrl = urlObj.searchParams.get("url");
-        if (actualUrl) {
-          pdfUrl = actualUrl;
-        }
-      } catch (e) {
-        logMessage("Could not parse actual URL from Chrome viewer", e);
-      }
-    }
 
-    if (pdfUrl.startsWith("file://")) {
-      logMessage("Local file detected for navigator PDF. Using local path...", { pdfUrl });
-      let localPath = decodeURIComponent(pdfUrl);
-      if (localPath.startsWith("file:///")) {
-        localPath = localPath.substring(8);
-        if (!localPath.match(/^[a-zA-Z]:\//)) {
-          localPath = "/" + localPath;
-        }
-      }
+  const parsed = extractCleanPdfPath(pdfUrl);
+
+  try {
+    if (parsed?.type === "local") {
+      logMessage("Local file detected for navigator PDF. Using local path...", { path: parsed.path });
       
-      const res = await fetch("http://127.0.0.1:8000/download-local-navigator-pdf", {
+      const res = await fetchBackendApi("/download-local-navigator-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ file_path: localPath })
+        body: JSON.stringify({ file_path: parsed.path })
       });
       
       if (!res.ok) {
@@ -601,17 +617,22 @@ async function handleDownloadNavigatorPdf(payload) {
       const data = await res.json();
       return { success: true, data };
       
-    } else if (pdfUrl.startsWith("http")) {
-      logMessage("Web URL detected for navigator PDF. Fetching PDF...", { pdfUrl });
+    } else if (parsed?.type === "web") {
+      logMessage("Web URL detected for navigator PDF. Fetching PDF...", { url: parsed.url });
       
-      const response = await fetch(pdfUrl);
-      if (!response.ok) throw new Error(`Failed to fetch PDF: ${response.statusText}`);
+      let response;
+      try {
+        response = await fetch(parsed.url);
+      } catch (fetchErr) {
+        throw new Error(`Failed to fetch PDF from web URL (${parsed.url}): ${fetchErr.message}`);
+      }
+      if (!response.ok) throw new Error(`Failed to fetch PDF (${parsed.url}): ${response.statusText}`);
       
       const blob = await response.blob();
       const formData = new FormData();
       formData.append("file", blob, "document.pdf");
       
-      const res = await fetch("http://127.0.0.1:8000/download-navigator-pdf", {
+      const res = await fetchBackendApi("/download-navigator-pdf", {
         method: "POST",
         body: formData
       });
@@ -623,6 +644,25 @@ async function handleDownloadNavigatorPdf(payload) {
           if (errBody && errBody.detail) errStr = errBody.detail;
         } catch(e) {}
         throw new Error(`Backend failed: ${errStr}`);
+      }
+      const data = await res.json();
+      return { success: true, data };
+    } else {
+      // Fallback: If current tab is not a PDF (e.g. user uploaded in sidepanel or opened extensions tab)
+      logMessage("No active PDF tab detected. Attempting to download navigator from active document memory...");
+      const res = await fetchBackendApi("/download-current-navigator-pdf", {
+        method: "POST"
+      });
+
+      if (!res.ok) {
+        let errStr = res.statusText;
+        try {
+          const errBody = await res.json();
+          if (errBody && errBody.detail) errStr = errBody.detail;
+        } catch(e) {}
+        throw new Error(errStr.includes("No active document")
+          ? "No active PDF found. Please open a PDF in your tab or upload one in the side panel first."
+          : `Backend failed: ${errStr}`);
       }
       const data = await res.json();
       return { success: true, data };
@@ -1140,7 +1180,10 @@ async function routeMessage(message, sender, sendResponse) {
     const result = await handler(payload, sender);
     sendSuccessResponse(sendResponse, { data: result });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown background error";
+    let errorMessage = error instanceof Error ? error.message : "Unknown background error";
+    if (errorMessage === "Failed to fetch" || errorMessage.includes("Failed to fetch")) {
+      errorMessage = "Cannot connect to the AI PDF Assistant backend at http://127.0.0.1:8000. Please ensure the Python server is running (uvicorn main:app --reload).";
+    }
 
     logMessage("Message handler failed", { action, error: errorMessage });
     sendErrorResponse(sendResponse, errorMessage, { action });

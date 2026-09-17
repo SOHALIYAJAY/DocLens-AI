@@ -562,7 +562,10 @@ function handleDownloadEmptyPdfClick() {
       if (icon) icon.className = "fa-solid fa-download";
       
       if (chrome.runtime.lastError || !response || !response.success) {
-        const errorMsg = chrome.runtime.lastError?.message || response?.error || "Unknown error";
+        let errorMsg = chrome.runtime.lastError?.message || response?.error || "Unknown error";
+        if (errorMsg === "Failed to fetch" || errorMsg.includes("Failed to fetch")) {
+          errorMsg = "Backend server offline at http://127.0.0.1:8000. Please start the backend server with: uvicorn main:app --reload";
+        }
         console.error("Failed to download PDF:", errorMsg);
         alert("Failed to download Navigator PDF: " + errorMsg);
         return;

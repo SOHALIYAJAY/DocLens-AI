@@ -59,8 +59,8 @@ def rewrite_query(question: str, history: Optional[List[Dict[str, str]]] = None)
         log_query_rewriting(clean_question, clean_question)
         return clean_question
 
-    # Cap history window to maximum recent 4 messages (2 user-assistant pairs)
-    recent_history = valid_history[-4:]
+    # Cap history window to recent 10 messages (up to 5 conversation turns)
+    recent_history = valid_history[-10:]
 
     # Format history for LLM prompt
     formatted_history = []
@@ -75,9 +75,10 @@ def rewrite_query(question: str, history: Optional[List[Dict[str, str]]] = None)
         "Your task is to rephrase the user's latest question into a self-contained, standalone search query for document retrieval.\n\n"
         "RULES:\n"
         "1. If the current question is already standalone, clear, and complete on its own (e.g. 'What are the company's financial risks?'), preserve and return the original question EXACTLY.\n"
-        "2. If the current question is a follow-up, incomplete, or contains pronouns/ellipsis (e.g. 'What about 2023?', 'How does it work?', 'Compare that to profit'), rewrite it into a complete, explicit standalone retrieval query using context from previous messages.\n"
-        "3. If the user question introduces a brand new, independent, or unrelated topic compared to previous messages, DO NOT let previous conversation context affect it. Preserve the original question.\n"
-        "4. Do NOT answer the question. Return ONLY the rewritten retrieval query text without explanations, quotes, or preambles."
+        "2. If the current question is a follow-up, incomplete, or contains pronouns/ellipsis (e.g. 'What about 2023?', 'How does it work?', 'Compare that to profit', 'Why did you say that?', 'Tell me more about the second point'), rewrite it into a complete, explicit standalone retrieval query using context from previous messages.\n"
+        "3. If the user question specifically asks about the conversation itself (e.g. 'What was the first question I asked you?', 'Summarize our conversation so far'), preserve the conversational question clearly so the dialogue history can answer it.\n"
+        "4. If the user question introduces a brand new, independent, or unrelated topic compared to previous messages, DO NOT let previous conversation context affect it. Preserve the original question.\n"
+        "5. Do NOT answer the question. Return ONLY the rewritten retrieval query text without explanations, quotes, or preambles."
     )
 
     user_prompt = f"""Recent Conversation History:

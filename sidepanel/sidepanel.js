@@ -777,7 +777,7 @@ async function handleSendChat() {
         action: "CHAT_WITH_PDF",
         payload: {
           question: message,
-          history: chatHistory.slice(-6)
+          history: chatHistory.slice(-14)
         }
       }, (res) => {
         if (chrome.runtime.lastError) {
@@ -810,7 +810,8 @@ async function handleSendChat() {
   }
 }
 
-function handleClearChat() {
+function handleClearChat(silent = false) {
+  const isSilent = silent === true;
   chatHistory = [];
   const container = document.getElementById("chat-messages");
   if (container) {
@@ -833,7 +834,17 @@ function handleClearChat() {
       </div>
     `;
   }
-  showToast("Chat cleared!");
+  const chatInput = document.getElementById("chat-input");
+  if (chatInput) {
+    chatInput.value = "";
+    chatInput.style.height = "auto";
+  }
+  const typing = document.getElementById("typing-indicator");
+  if (typing) typing.hidden = true;
+
+  if (!isSilent) {
+    showToast("Chat cleared!");
+  }
 }
 
 /**
@@ -1120,24 +1131,95 @@ async function handleRefreshSidebar(btnId = "btn-refresh-sidebar") {
 
   if (icon) icon.classList.add("spinning");
 
-  logAction("Sidebar refresh triggered");
+  logAction("Sidebar refresh triggered - resetting chat and reloading system");
+
+  // 1. Immediately wipe chat history and reset chat messages container
+  chatHistory = [];
+  handleClearChat(true);
+
+  // 2. Clear chat textarea and typing indicator
+  const chatInput = document.getElementById("chat-input");
+  if (chatInput) {
+    chatInput.value = "";
+    chatInput.style.height = "auto";
+  }
+  const typing = document.getElementById("typing-indicator");
+  if (typing) typing.hidden = true;
+
+  // 3. Clear extracted images gallery and extraction status
+  const gallery = document.getElementById("images-gallery");
+  if (gallery) gallery.innerHTML = "";
+
+  const statusArea = document.getElementById("extraction-status-area");
+  if (statusArea) {
+    statusArea.style.display = "none";
+    statusArea.textContent = "";
+  }
+  const btnExtract = document.getElementById("btn-extract-pdf");
+  if (btnExtract) btnExtract.disabled = false;
+
+  // 4. Ensure active section is Chat
+  navigateToSection("chat");
 
   try {
+    // 5. Remove cached temporary extraction storage
     await new Promise((resolve) => {
       chrome.storage.local.remove(["lastExtractedText", "lastExtractedImages"], () => {
         resolve();
       });
     });
-    await renderBookmarks();
+
+    // 6. Re-check active document from backend
     await checkCurrentDocument();
-    showToast("Workspace refreshed!");
+
+    // 7. Refresh bookmarks & suggested questions
+    await renderBookmarks();
+    renderSuggestedQuestions();
+
+    // 8. Refresh Navigator if loaded
+    if (typeof fetchNavigator === "function") {
+      try {
+        fetchNavigator();
+      } catch (navErr) {
+        console.warn("Navigator refresh note:", navErr);
+      }
+    }
   } catch (err) {
-    logAction("Refresh failed", err);
-    showToast("Refresh failed", true);
+    logAction("Refresh sub-task note", err);
+  } finally {
+    showToast("Workspace refreshed & chat cleared!");
+
+    // 9. Force window reload
+    setTimeout(() => {
+      if (icon) icon.classList.remove("spinning");
+      try {
+        window.location.reload();
+      } catch (reloadErr) {
+        try {
+          window.location.href = window.location.href;
+        } catch (hrefErr) {
+          console.warn("Page reload bypassed:", hrefErr);
+        }
+      }
+    }, 350);
+  }
+}
+
+async function handleRefreshBookmarks() {
+  const btn = document.getElementById("btn-refresh-bookmarks");
+  const icon = btn ? btn.querySelector("i") : null;
+
+  if (icon) icon.classList.add("spinning");
+
+  try {
+    await renderBookmarks();
+    showToast("Bookmarks refreshed!");
+  } catch (err) {
+    showToast("Failed to refresh bookmarks", true);
   } finally {
     setTimeout(() => {
       if (icon) icon.classList.remove("spinning");
-    }, 600);
+    }, 500);
   }
 }
 
@@ -1172,7 +1254,10 @@ function handleDownloadPdfNav() {
       if (icon) icon.className = originalClass;
 
       if (chrome.runtime.lastError || !response || !response.success) {
-        const errorMsg = chrome.runtime.lastError?.message || response?.error || "Unknown error";
+        let errorMsg = chrome.runtime.lastError?.message || response?.error || "Unknown error";
+        if (errorMsg === "Failed to fetch" || errorMsg.includes("Failed to fetch")) {
+          errorMsg = "Backend server offline at http://127.0.0.1:8000. Start it with: uvicorn main:app --reload";
+        }
         console.error("Failed to download PDF:", errorMsg);
         showToast("Failed to download PDF: " + errorMsg, true);
         return;
@@ -1251,7 +1336,7 @@ function bindEventListeners() {
 
   // Bookmarks & Header Actions
   document.getElementById("btn-refresh-sidebar")?.addEventListener("click", () => handleRefreshSidebar("btn-refresh-sidebar"));
-  document.getElementById("btn-refresh-bookmarks")?.addEventListener("click", () => handleRefreshSidebar("btn-refresh-bookmarks"));
+  document.getElementById("btn-refresh-bookmarks")?.addEventListener("click", handleRefreshBookmarks);
   document.getElementById("btn-quick-bookmarks")?.addEventListener("click", handleQuickBookmarksToggle);
   document.getElementById("btn-download-pdf-nav")?.addEventListener("click", handleDownloadPdfNav);
   document.getElementById("btn-dropdown-download-pdf")?.addEventListener("click", handleDownloadPdfNav);

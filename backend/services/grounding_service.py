@@ -41,17 +41,15 @@ def check_numeric_grounding(draft_answer: str, context_str: str) -> bool:
 
     return True
 
-def verify_grounding(draft_answer: str, context_chunks: List[str], question: str) -> Dict[str, Any]:
+def verify_grounding(
+    draft_answer: str, 
+    context_chunks: List[str], 
+    question: str,
+    history: Optional[List[dict]] = None
+) -> dict:
     """
-    Verifies draft answer against context chunks across 6 checks:
-    1. Supported by evidence
-    2. Factual claims supported
-    3. Numbers supported
-    4. Dates supported
-    5. Citations supported
-    6. No invented information
-    
-    Returns structured JSON with verdict ('PASS', 'FAIL', 'INSUFFICIENT_EVIDENCE') and feedback.
+    Evaluates whether the draft answer is fully grounded in the retrieved PDF context
+    and ongoing conversation history. Returns structured JSON with verdict and feedback.
     """
     if not draft_answer or not draft_answer.strip():
         return {
@@ -96,17 +94,18 @@ def verify_grounding(draft_answer: str, context_chunks: List[str], question: str
 
         verifier_system_prompt = (
             "You are a strict grounding and hallucination verification auditor for a PDF document RAG system. "
-            "Your job is to audit a draft answer against the provided PDF evidence context chunks and user question.\n\n"
+            "Your job is to audit a draft answer against the provided PDF evidence context chunks, conversation history, and user question.\n\n"
             "MUST CHECK:\n"
-            "1. Is the draft answer supported by the retrieved PDF context?\n"
-            "2. Are all factual claims supported by context?\n"
+            "1. Is the draft answer supported by the retrieved PDF context and ongoing conversation history?\n"
+            "2. Are all factual claims about the document supported by context or preceding conversation?\n"
             "3. Are numbers, metrics, and percentages strictly supported?\n"
             "4. Are dates and years supported?\n"
             "5. Are page/table/figure citations valid?\n"
-            "6. Did the draft answer invent outside information or make ungrounded assumptions?\n\n"
-            "VERDICT RULES:\n"
-            "- Return 'PASS' if the answer is completely grounded in evidence.\n"
-            "- Return 'INSUFFICIENT_EVIDENCE' if the context does not contain enough information to answer reliably.\n"
+            "6. Did the draft answer invent outside information not in the document or conversation?\n\n"
+            "CONVERSATIONAL RULES:\n"
+            "- If the user asks a follow-up, clarification, summary, comparison, or question referencing previous conversation turns, verify that the answer is consistent with the conversation history and document context.\n"
+            "- Return 'PASS' if the answer is grounded in evidence or consistent with the conversation history.\n"
+            "- Return 'INSUFFICIENT_EVIDENCE' only if neither the context nor conversation contains enough information to answer reliably.\n"
             "- Return 'FAIL' if the draft contains ungrounded claims, invented numbers, or false assumptions.\n\n"
             "You MUST respond ONLY with a raw JSON object matching this structure exactly:\n"
             "{\n"
@@ -121,9 +120,16 @@ def verify_grounding(draft_answer: str, context_chunks: List[str], question: str
             "}"
         )
 
+        history_snippet = ""
+        if history:
+            valid_h = [m for m in history if isinstance(m, dict) and m.get("content")]
+            if valid_h:
+                h_lines = [f"{m.get('role', 'user').capitalize()}: {m.get('content').strip()}" for m in valid_h[-8:]]
+                history_snippet = f"\n\n<CONVERSATION_HISTORY>\n" + "\n".join(h_lines) + "\n</CONVERSATION_HISTORY>"
+
         verifier_user_prompt = f"""<PDF_CONTEXT_EVIDENCE>
 {combined_context[:8000]}
-</PDF_CONTEXT_EVIDENCE>
+</PDF_CONTEXT_EVIDENCE>{history_snippet}
 
 <USER_QUESTION>
 {question}
@@ -204,6 +210,10 @@ def generate_grounded_response(
     Returns INSUFFICIENT_EVIDENCE_RESPONSE if ungrounded or evidence is missing.
     """
     if not context_chunks:
+        if history and any(m.get("content") for m in history if isinstance(m, dict)):
+            if generate_fn:
+                return generate_fn(context_chunks=["[Conversation Mode: Using discussion history]"], question=question, history=history, feedback="")
+            return default_llm_generate(context_chunks=["[Conversation Mode: Using discussion history]"], question=question, history=history, feedback="")
         return INSUFFICIENT_EVIDENCE_RESPONSE
 
     # If context itself indicates insufficient evidence
@@ -223,7 +233,7 @@ def generate_grounded_response(
             draft_answer = default_llm_generate(context_chunks=context_chunks, question=question, history=history, feedback=current_feedback)
 
         safe_print(f"\n[Grounding Audit] Verification Attempt {attempt}/{MAX_VERIFICATION_RETRIES + 1}...")
-        audit = verify_grounding(draft_answer, context_chunks, question)
+        audit = verify_grounding(draft_answer, context_chunks, question, history=history)
         verdict = audit.get("verdict", "PASS")
         feedback = audit.get("feedback", "")
 
@@ -256,16 +266,18 @@ def default_llm_generate(context_chunks: List[str], question: str, history: Opti
     model_name = get_groq_model()
 
     system_instruction = (
-        "You are an expert, highly accurate, and clear document-answering AI assistant. "
-        "Answer the user's question with complete precision strictly using ONLY the provided context chunks. "
-        "Do NOT use outside knowledge. Do NOT make ungrounded assumptions. Do NOT invent numbers or dates. "
-        "If structured table data or deterministic calculation results are provided in the context, incorporate them directly and explain the results clearly. "
-        "Provide step-by-step logic, clear explanations, formatted code blocks, input/output examples, and exact page or table citations (e.g. [Page 1], [Page 2, Table table_1]). "
-        "Only if the question is unmentioned or evidence is missing, reply politely that the document does not contain that detail."
+        "You are an expert, highly accurate, and conversational AI document assistant for DocLens-AI.\n"
+        "- Maintain complete conversational continuity with the user across dialogue turns. You have full access to the ongoing conversation history.\n"
+        "- For questions about the PDF document, ground your answers strictly in the provided document <context> chunks.\n"
+        "- For conversational follow-ups, questions referring to previous messages (e.g., 'what did I ask before', 'summarize our chat', 'elaborate on your second point', 'compare what you just said'), seamlessly reference the conversation history and previous assistant answers.\n"
+        "- Do not make up facts outside the document or conversation.\n"
+        "- If structured table data or deterministic calculation results are provided in the context, incorporate them directly and explain the results clearly.\n"
+        "- Provide step-by-step logic, clear explanations, formatted code blocks, and exact page or table citations (e.g. [Page 1], [Page 2, Table table_1]) when citing document facts.\n"
+        "- Only if a document-specific detail is completely missing from both the context chunks and the conversation history, politely inform the user."
     )
 
     if feedback:
-        system_instruction += f"\n\nCRITICAL AUDIT FEEDBACK FROM PREVIOUS DRAFT: The previous draft was rejected for ungrounded claims/numbers: {feedback}. Remove any unsupported claims or numbers immediately and rely strictly on the context chunks."
+        system_instruction += f"\n\nCRITICAL AUDIT FEEDBACK FROM PREVIOUS DRAFT: The previous draft was rejected for ungrounded claims/numbers: {feedback}. Remove any unsupported claims or numbers immediately and rely strictly on the context chunks and conversation history."
 
     combined_context = "\n\n--- Chunk ---\n\n".join(context_chunks)
     if len(combined_context) > 12000:
@@ -274,7 +286,7 @@ def default_llm_generate(context_chunks: List[str], question: str, history: Opti
     capped_history = []
     if history:
         valid = [m for m in history if isinstance(m, dict) and m.get("content")]
-        capped_history = valid[-4:]
+        capped_history = valid[-14:]
 
     messages = [{"role": "system", "content": system_instruction}]
 
@@ -282,15 +294,15 @@ def default_llm_generate(context_chunks: List[str], question: str, history: Opti
         role = "user" if msg.get("role") in ("user", "human") else "assistant"
         messages.append({"role": role, "content": msg.get("content").strip()})
 
-    prompt = f"""
-Here are the relevant text chunks extracted from the user's PDF document:
+    prompt = f"""Document Evidence Context:
 <context>
 {combined_context}
 </context>
 
-Based on the <context> above, please answer the following question:
+User Question:
 {question}
-"""
+
+Please answer the user's question accurately based on the document <context> and our ongoing conversation history:"""
 
     messages.append({"role": "user", "content": prompt})
 

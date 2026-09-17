@@ -182,8 +182,9 @@ def generate_response(
         ValueError: If inputs are invalid or the API key is missing.
         Exception: If the API request fails.
     """
-    if not context_chunks:
-        raise ValueError("No context chunks provided. Cannot generate a response.")
+    has_history = bool(history and any(m.get("content") for m in history if isinstance(m, dict)))
+    if not context_chunks and not has_history:
+        raise ValueError("No context chunks or conversation history provided. Cannot generate a response.")
         
     if not question or not question.strip():
         raise ValueError("The user question is empty. Please ask a valid question.")

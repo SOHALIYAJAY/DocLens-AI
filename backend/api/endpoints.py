@@ -1,7 +1,8 @@
-# api/endpoints.py
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                # api/endpoints.py
 # This file defines the actual API routes (endpoints) that clients will call.
 
 import base64
+import json
 from fastapi import APIRouter, UploadFile, File, HTTPException
 import os
 import traceback
@@ -28,6 +29,9 @@ from services.research_report_service import research_report_service
 from models.schemas import DocumentStructureResponse, ResearchReportRequest, ResearchReportResponse
 from services.retriever_service import retrieve_relevant_chunks, retrieve_relevant_chunks_with_metadata
 from services.citation_service import extract_sources_from_metadata, attach_sources_to_answer
+
+ACTIVE_PDF_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".active_document.pdf")
+ACTIVE_META_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".active_meta.json")
 
 # Create an APIRouter instance
 router = APIRouter()
@@ -80,6 +84,15 @@ async def upload_pdf(file: UploadFile = File(...)):
             ds_manifest = document_structure_service.extract_structure(file_bytes=file_bytes, filename=file.filename, chunks=chunks)
         except Exception as ds_err:
             print(f"[DOCUMENT_STRUCTURE] Non-blocking extraction note: {ds_err}")
+
+        # Persist active document bytes for navigator download & offline exports
+        try:
+            with open(ACTIVE_PDF_PATH, "wb") as f:
+                f.write(file_bytes)
+            with open(ACTIVE_META_PATH, "w", encoding="utf-8") as f:
+                json.dump({"filename": file.filename}, f)
+        except Exception as save_err:
+            print(f"[UPLOAD] Could not save active document cache: {save_err}")
 
         return UploadResponse(
             success=True,
@@ -139,6 +152,15 @@ async def upload_local_pdf(request: LocalUploadRequest):
             ds_manifest = document_structure_service.extract_structure(file_bytes=file_bytes, filename=filename, chunks=chunks)
         except Exception as ds_err:
             print(f"[DOCUMENT_STRUCTURE] Non-blocking extraction note: {ds_err}")
+
+        # Persist active document bytes for navigator download & offline exports
+        try:
+            with open(ACTIVE_PDF_PATH, "wb") as f:
+                f.write(file_bytes)
+            with open(ACTIVE_META_PATH, "w", encoding="utf-8") as f:
+                json.dump({"filename": filename, "file_path": clean_path}, f)
+        except Exception as save_err:
+            print(f"[LOCAL UPLOAD] Could not save active document cache: {save_err}")
 
         return UploadResponse(
             success=True,
@@ -210,6 +232,16 @@ async def clear_document_endpoint():
         figure_service.clear_figures()
         topic_service.clear_topics()
         document_structure_service.clear()
+        if os.path.exists(ACTIVE_PDF_PATH):
+            try:
+                os.remove(ACTIVE_PDF_PATH)
+            except Exception:
+                pass
+        if os.path.exists(ACTIVE_META_PATH):
+            try:
+                os.remove(ACTIVE_META_PATH)
+            except Exception:
+                pass
         return {
             "success": True,
             "message": "Knowledge base and document indices successfully cleared."
@@ -505,7 +537,7 @@ async def download_navigator_pdf(file: UploadFile = File(...)):
         except Exception as e:
             print(f"Error extracting structure manifest for PDF download: {e}")
 
-        pdf_bytes = create_navigator_pdf(navigator_res, structure_manifest=structure_manifest)
+        pdf_bytes = create_navigator_pdf(navigator_res, structure_manifest=structure_manifest, file_bytes=file_bytes)
         
         return {
             "success": True, 
@@ -556,7 +588,63 @@ async def download_local_navigator_pdf(request: LocalUploadRequest):
         except Exception as e:
             print(f"Error extracting structure manifest for local PDF download: {e}")
 
-        pdf_bytes = create_navigator_pdf(navigator_res, structure_manifest=structure_manifest)
+        pdf_bytes = create_navigator_pdf(navigator_res, structure_manifest=structure_manifest, file_bytes=file_bytes)
+        
+        return {
+            "success": True, 
+            "pdf_base64": base64.b64encode(pdf_bytes).decode("utf-8")
+        }
+    except Exception as e:
+        err_msg = traceback.format_exc()
+        print(err_msg)
+        raise HTTPException(status_code=500, detail=err_msg)
+
+@router.post("/download-current-navigator-pdf")
+async def download_current_navigator_pdf():
+    """
+    Endpoint to generate or retrieve the cached AI Document Navigator for the currently active document in memory.
+    """
+    if not os.path.exists(ACTIVE_PDF_PATH):
+        raise HTTPException(status_code=404, detail="No active document found in memory. Please open or upload a PDF first.")
+        
+    try:
+        with open(ACTIVE_PDF_PATH, 'rb') as f:
+            file_bytes = f.read()
+            
+        filename = "Active_Document.pdf"
+        if os.path.exists(ACTIVE_META_PATH):
+            try:
+                with open(ACTIVE_META_PATH, 'r', encoding='utf-8') as f:
+                    meta = json.load(f)
+                    filename = meta.get("filename", filename)
+            except Exception:
+                pass
+                
+        navigator_res = generate_navigator(file_bytes, filename)
+        
+        # Extract links dynamically from the bytes
+        try:
+            from services.pdf_generator_service import extract_links_from_pdf_bytes
+            links = extract_links_from_pdf_bytes(file_bytes)
+            if links:
+                from models.schemas import NavigatorSection, NavigatorItem
+                has_links = any(s.title == "Document Links" for s in navigator_res.sections)
+                if not has_links:
+                    navigator_res.sections.append(NavigatorSection(
+                        title="Document Links",
+                        items=[NavigatorItem(**l) for l in links]
+                    ))
+        except Exception as e:
+            print(f"Error appending links dynamically: {e}")
+            
+        structure_manifest = None
+        try:
+            from services.document_structure_service import document_structure_service
+            structure_manifest = document_structure_service.extract_structure(file_bytes, filename)
+        except Exception as e:
+            print(f"Error extracting structure manifest for current PDF download: {e}")
+
+        pdf_bytes = create_navigator_pdf(navigator_res, structure_manifest=structure_manifest, file_bytes=file_bytes)
         
         return {
             "success": True, 

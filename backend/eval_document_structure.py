@@ -29,8 +29,11 @@ Generates Detailed Diagnostics & Error Analysis:
 
 import os
 import sys
-import fitz
 from typing import List, Dict, Any, Tuple
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

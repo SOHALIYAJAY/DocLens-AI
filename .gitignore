@@ -35,6 +35,8 @@ chroma.sqlite3
 .navigator_cache/
 .bm25_index.json
 .context_chunks.json
+.active_document.pdf
+.active_meta.json
 
 # OS
 .DS_Store

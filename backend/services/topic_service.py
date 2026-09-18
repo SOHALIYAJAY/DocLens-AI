@@ -8,6 +8,10 @@ document title extraction, topic query intent classification, and structured top
 import os
 import re
 from typing import List, Dict, Any, Optional, Tuple
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 from services.llm_service import safe_print
 
 class TopicService:
@@ -184,7 +188,6 @@ class TopicService:
 
             if file_bytes:
                 try:
-                    import fitz
                     doc = fitz.open(stream=file_bytes, filetype="pdf")
                     m_title = doc.metadata.get("title", "")
                     doc.close()
@@ -220,7 +223,6 @@ class TopicService:
         toc_items = []
         if file_bytes:
             try:
-                import fitz
                 doc = fitz.open(stream=file_bytes, filetype="pdf")
                 toc = doc.get_toc()
                 doc.close()

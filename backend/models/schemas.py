@@ -112,9 +112,11 @@ class ImageExplanationResponse(BaseModel):
 
 class ExplainImageRequest(BaseModel):
     """
-    Schema for the incoming request to the /explain-image endpoint.
+    Schema for the incoming request to the /image/explain or /explain-image endpoint.
     """
-    image_id: str = Field(description="The ID of the image to explain")
+    image_id: Optional[str] = Field(default=None, description="The ID of the image to explain")
+    image_base64: Optional[str] = Field(default=None, description="Optional raw base64 data of image")
+    image_format: Optional[str] = Field(default="jpeg", description="Optional format of base64 image")
     prompt: Optional[str] = Field(default=None, description="Optional prompt to guide the explanation")
 
 # ==========================================

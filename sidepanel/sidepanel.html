@@ -42,6 +42,10 @@
               <i class="fa-solid fa-comments" style="width: 16px; text-align: center; color: #3b82f6;"></i>
               <span>AI Chat</span>
             </button>
+            <button type="button" class="nav-menu-option" data-section="navigator" style="width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: none; background: transparent; color: var(--color-text); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; text-align: left;">
+              <i class="fa-solid fa-compass" style="width: 16px; text-align: center; color: #10b981;"></i>
+              <span>AI Navigator</span>
+            </button>
             <button type="button" class="nav-menu-option" data-section="images" style="width: 100%; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: none; background: transparent; color: var(--color-text); font-size: 12px; font-weight: 500; border-radius: 6px; cursor: pointer; text-align: left;">
               <i class="fa-solid fa-image" style="width: 16px; text-align: center; color: #f59e0b;"></i>
               <span>Images</span>
@@ -164,9 +168,65 @@
           </div>
         </section>
 
+        <!-- Section 2: AI Document Navigator -->
+        <section
+          class="panel-section"
+          id="section-navigator"
+          data-section="navigator"
+          aria-labelledby="nav-navigator"
+          hidden
+        >
+          <div class="section-heading" style="display: flex; align-items: center; justify-content: space-between;">
+            <div>
+              <h2 class="section-title">AI Navigator</h2>
+              <p class="section-desc">Intelligent document outline &amp; insights</p>
+            </div>
+            <button type="button" class="icon-btn" id="btn-refresh-navigator" title="Refresh Navigator" style="width: 30px; height: 30px;">
+              <i class="fa-solid fa-rotate" style="font-size: 12px;"></i>
+            </button>
+          </div>
 
+          <!-- Search Box -->
+          <div class="navigator-search-container" style="position: relative; margin-bottom: 12px;">
+            <i class="fa-solid fa-magnifying-glass" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--color-text-muted); font-size: 12px;"></i>
+            <input
+              type="text"
+              id="navigator-search"
+              class="text-input"
+              placeholder="Search chapters, topics, definitions..."
+              style="padding-left: 32px; width: 100%; font-size: 12px; height: 36px; border-radius: var(--radius-md);"
+            />
+          </div>
 
-        <!-- Section 4: Images & Architecture Diagrams -->
+          <!-- Loading Skeleton -->
+          <div id="navigator-skeleton" style="display: none; padding: 10px 0;">
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <div style="height: 48px; border-radius: 6px; background: rgba(255,255,255,0.06); animation: pulse 1.5s infinite;"></div>
+              <div style="height: 38px; border-radius: 6px; background: rgba(255,255,255,0.04); animation: pulse 1.5s infinite;"></div>
+              <div style="height: 38px; border-radius: 6px; background: rgba(255,255,255,0.04); animation: pulse 1.5s infinite;"></div>
+              <div style="height: 38px; border-radius: 6px; background: rgba(255,255,255,0.04); animation: pulse 1.5s infinite;"></div>
+            </div>
+          </div>
+
+          <!-- Empty State -->
+          <div id="navigator-empty-state" class="empty-state" style="display: none; text-align: center; padding: 28px 16px; background: rgba(30, 41, 59, 0.3); border: 1px dashed var(--color-border); border-radius: var(--radius-lg); margin-top: 8px;">
+            <div style="font-size: 32px; color: var(--color-primary); margin-bottom: 8px;">
+              <i class="fa-solid fa-compass"></i>
+            </div>
+            <h3 style="font-size: 14px; font-weight: 600; color: var(--color-text); margin-bottom: 4px;">No Outline Generated</h3>
+            <p style="font-size: 12px; color: var(--color-text-muted); margin-bottom: 12px;" id="navigator-empty-msg">Open or upload a PDF to extract document structure.</p>
+            <button type="button" class="btn btn-sm btn-primary" id="btn-trigger-fetch-navigator" style="display: inline-flex; align-items: center; gap: 6px; margin: 0 auto; font-size: 11px; padding: 6px 14px;">
+              <i class="fa-solid fa-wand-magic-sparkles"></i>
+              <span>Generate Navigator</span>
+            </button>
+          </div>
+
+          <!-- Document Overview Section -->
+          <div id="navigator-overview" style="display: none; margin-bottom: 10px;"></div>
+
+          <!-- Accordion Tree List -->
+          <div id="navigator-accordion" style="display: flex; flex-direction: column; gap: 8px;"></div>
+        </section>
         <section
           class="panel-section"
           id="section-images"

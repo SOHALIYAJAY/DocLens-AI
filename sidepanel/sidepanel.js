@@ -203,6 +203,7 @@ function navigateToSection(sectionId) {
   // Update dropdown button label and icon
   const SECTION_MAP = {
     chat: { label: "AI Chat", icon: "fa-comments", color: "#3b82f6" },
+    navigator: { label: "AI Navigator", icon: "fa-compass", color: "#10b981" },
     images: { label: "Images", icon: "fa-image", color: "#f59e0b" },
     bookmarks: { label: "Bookmarks", icon: "fa-bookmark", color: "#ec4899" },
   };
@@ -223,6 +224,10 @@ function navigateToSection(sectionId) {
 
   if (sectionId === "chat") {
     demoTypingIndicator();
+  } else if (sectionId === "navigator" && typeof fetchNavigator === "function") {
+    if (!navigatorData) {
+      fetchNavigator();
+    }
   }
 }
 
@@ -1057,13 +1062,13 @@ function renderExtractedImages(images) {
     explainBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Explain Image';
 
     const explanationContainer = document.createElement("div");
-    explanationContainer.style = "margin-top: 0.5rem; font-size: var(--text-sm); display: none; background: var(--background-color); padding: 0.6rem; border-radius: var(--border-radius); border: 1px solid var(--border-color); max-height: 320px; overflow-y: auto; line-height: 1.45;";
+    explanationContainer.style = "margin-top: 8px; font-size: 12px; display: none; background: rgba(15, 23, 42, 0.75); padding: 10px 12px; border-radius: 8px; border: 1px solid var(--color-border, rgba(255, 255, 255, 0.12)); max-height: 340px; overflow-y: auto; line-height: 1.5; color: #f8fafc;";
 
     explainBtn.addEventListener("click", () => {
       explainBtn.disabled = true;
       explainBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
       explanationContainer.style.display = "block";
-      explanationContainer.innerHTML = '<em>Analyzing image...</em>';
+      explanationContainer.innerHTML = '<em style="color: #94a3b8;">Analyzing image...</em>';
 
       chrome.runtime.sendMessage({
         action: "EXPLAIN_IMAGE",
@@ -1073,41 +1078,39 @@ function renderExtractedImages(images) {
         explainBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Explain Image';
 
         if (chrome.runtime.lastError || !explainRes || !explainRes.success) {
-          explanationContainer.innerHTML = '<span style="color:var(--danger-color)">Failed to analyze image.</span>';
+          const errMsg = explainRes?.error || chrome.runtime.lastError?.message || "Failed to analyze image. Please verify Groq API key and backend.";
+          explanationContainer.innerHTML = `<span style="color:var(--danger-color, #ef4444); font-size:12px;">${errMsg}</span>`;
           return;
         }
 
-        const result = explainRes.data || explainRes;
+        const raw = explainRes.data || explainRes;
+        const result = raw.data || raw;
 
-        let componentsHtml = "";
-        if (result.important_components && result.important_components.length > 0) {
-          componentsHtml = `<strong>Important Components:</strong><ul>` + result.important_components.map(c => `<li>${c}</li>`).join("") + `</ul>`;
-        }
-
-        let relationshipsHtml = "";
-        if (result.relationships && result.relationships.length > 0) {
-          relationshipsHtml = `<strong>Relationships:</strong><ul>` + result.relationships.map(r => `<li>${r}</li>`).join("") + `</ul>`;
-        }
+        const points = (result.key_takeaways && result.key_takeaways.length > 0)
+          ? result.key_takeaways
+          : (result.important_components && result.important_components.length > 0 ? result.important_components : []);
 
         let takeawaysHtml = "";
-        if (result.key_takeaways && result.key_takeaways.length > 0) {
-          takeawaysHtml = `<strong>Key Takeaways:</strong><ul>` + result.key_takeaways.map(k => `<li>${k}</li>`).join("") + `</ul>`;
-        }
-
-        let applicationHtml = "";
-        if (result.real_world_application) {
-          applicationHtml = `<strong>Real-World Application:</strong><br/>${result.real_world_application}`;
+        if (points.length > 0) {
+          takeawaysHtml = `
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--color-border, rgba(255, 255, 255, 0.1));">
+              <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-primary, #38bdf8);">Key Takeaways</span>
+              <ul style="margin: 4px 0 0 16px; padding: 0; font-size: 12px; line-height: 1.45; color: #f1f5f9;">
+                ${points.slice(0, 3).map(k => `<li style="margin-bottom: 3px;">${k}</li>`).join("")}
+              </ul>
+            </div>
+          `;
         }
 
         explanationContainer.innerHTML = `
-          <strong>${result.title}</strong><br/>
-          <em>${result.summary}</em><br/>
-          <p style="margin-top:0.5rem">${result.explanation}</p>
-          <div style="margin-top:0.5rem; border-top: 1px solid var(--border-color); padding-top: 0.5rem;">
-            ${componentsHtml}
-            ${relationshipsHtml}
+          <div style="font-size: 12px; line-height: 1.5; color: #f8fafc;">
+            <div style="font-weight: 600; font-size: 13px; color: var(--color-primary, #38bdf8); margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-chart-simple"></i>
+              <span>${result.title || "Visual Analysis"}</span>
+            </div>
+            ${result.summary ? `<div style="color: #cbd5e1; font-size: 12px; margin-bottom: 6px; font-style: italic; line-height: 1.45;">${result.summary}</div>` : ""}
+            ${result.explanation ? `<div style="color: #ffffff; font-size: 12.5px; margin-bottom: 6px; line-height: 1.55;">${result.explanation}</div>` : ""}
             ${takeawaysHtml}
-            ${applicationHtml}
           </div>
         `;
       });
@@ -1175,15 +1178,6 @@ async function handleRefreshSidebar(btnId = "btn-refresh-sidebar") {
     // 7. Refresh bookmarks & suggested questions
     await renderBookmarks();
     renderSuggestedQuestions();
-
-    // 8. Refresh Navigator if loaded
-    if (typeof fetchNavigator === "function") {
-      try {
-        fetchNavigator();
-      } catch (navErr) {
-        console.warn("Navigator refresh note:", navErr);
-      }
-    }
   } catch (err) {
     logAction("Refresh sub-task note", err);
   } finally {

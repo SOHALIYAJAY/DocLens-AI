@@ -14,14 +14,17 @@ import io
 import html
 import re
 from typing import Optional, Dict, Any, List
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table, TableStyle
-from reportlab.lib import colors
-import fitz
-from models.schemas import NavigatorResponse
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 from services.document_structure_service import document_structure_service
 from services.table_service import table_service
+from models.schemas import NavigatorResponse
 
 def clean_pdf_text(text: str) -> str:
     """

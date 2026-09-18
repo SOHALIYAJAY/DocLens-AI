@@ -505,7 +505,7 @@ async function handleChatWithPdf(payload) {
 async function handleExplainImage(payload) {
   logMessage("EXPLAIN_IMAGE handled", { payload });
   try {
-    const response = await fetch("http://127.0.0.1:8000/explain-image", {
+    const response = await fetch("http://127.0.0.1:8000/image/explain", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -516,7 +516,14 @@ async function handleExplainImage(payload) {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Vision analysis failed: ${errText || response.statusText}`);
+      let errorMsg = response.statusText;
+      try {
+        const parsed = JSON.parse(errText);
+        errorMsg = parsed.detail || parsed.message || errText;
+      } catch (_) {
+        if (errText) errorMsg = errText;
+      }
+      throw new Error(`Vision analysis failed: ${errorMsg}`);
     }
 
     const result = await response.json();
@@ -533,14 +540,10 @@ async function handleExplainImage(payload) {
 async function handleExtractPdfNavigator() {
   logMessage("EXTRACT_PDF_NAVIGATOR triggered");
   const activeTab = await getActiveTab();
-  
   const parsed = extractCleanPdfPath(activeTab?.url);
-  if (!parsed) {
-    throw new Error("No active PDF found to generate navigator.");
-  }
-  
+
   try {
-    if (parsed.type === "local") {
+    if (parsed && parsed.type === "local") {
       logMessage("Local file detected for navigator. Using local path...", { path: parsed.path });
       const res = await fetchBackendApi("/generate-local-navigator", {
         method: "POST",
@@ -548,11 +551,21 @@ async function handleExtractPdfNavigator() {
         body: JSON.stringify({ file_path: parsed.path })
       });
       
-      if (!res.ok) throw new Error(`Backend failed: ${res.statusText}`);
+      if (!res.ok) {
+        const errText = await res.text();
+        let errMsg = res.statusText;
+        try {
+          const parsedErr = JSON.parse(errText);
+          errMsg = parsedErr.detail || parsedErr.message || errText;
+        } catch (_) {
+          if (errText) errMsg = errText;
+        }
+        throw new Error(`Backend failed: ${errMsg}`);
+      }
       const data = await res.json();
-      return { success: true, data };
+      return data;
       
-    } else if (parsed.type === "web") {
+    } else if (parsed && parsed.type === "web") {
       logMessage("Web URL detected for navigator. Fetching PDF...", { url: parsed.url });
       
       let response;
@@ -572,11 +585,50 @@ async function handleExtractPdfNavigator() {
         body: formData
       });
       
-      if (!res.ok) throw new Error(`Backend failed: ${res.statusText}`);
+      if (!res.ok) {
+        const errText = await res.text();
+        let errMsg = res.statusText;
+        try {
+          const parsedErr = JSON.parse(errText);
+          errMsg = parsedErr.detail || parsedErr.message || errText;
+        } catch (_) {
+          if (errText) errMsg = errText;
+        }
+        throw new Error(`Backend failed: ${errMsg}`);
+      }
       const data = await res.json();
-      return { success: true, data };
+      return data;
+    } else {
+      // Fallback: If current tab is not a PDF (e.g. user uploaded in sidepanel or opened extensions tab)
+      logMessage("No active PDF tab detected. Attempting to generate navigator from active document memory...");
+      const res = await fetchBackendApi("/generate-current-navigator", {
+        method: "POST"
+      });
+      
+      if (!res.ok) {
+        let errStr = res.statusText;
+        try {
+          const errBody = await res.json();
+          if (errBody && errBody.detail) errStr = errBody.detail;
+        } catch(e) {}
+        throw new Error(errStr.includes("No active document")
+          ? "No active PDF found. Please open a PDF in your tab or upload one in the side panel first."
+          : `Backend failed: ${errStr}`);
+      }
+      const data = await res.json();
+      return data;
     }
   } catch (error) {
+    // If local/web fetch failed, attempt fallback to active document before giving up
+    if (parsed) {
+      try {
+        logMessage("Primary navigator fetch failed, attempting fallback to active memory PDF...");
+        const res = await fetchBackendApi("/generate-current-navigator", { method: "POST" });
+        if (res.ok) {
+          return await res.json();
+        }
+      } catch (_) {}
+    }
     logMessage("Error extracting navigator", { error: error.message });
     throw error;
   }
@@ -739,29 +791,6 @@ async function handleExtractImages(payload) {
   }
 }
 
-/**
- * Handles explain-image requests.
- */
-async function handleExplainImage(payload) {
-  logMessage("EXPLAIN_IMAGE handled");
-  try {
-    const response = await fetch("http://127.0.0.1:8000/image/explain", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_id: payload.image_id, prompt: payload.prompt }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Explain image failed: ${response.statusText}`);
-    }
-    
-    const result = await response.json();
-    return { ...result, action: MESSAGE_ACTIONS.EXPLAIN_IMAGE };
-  } catch (error) {
-    logMessage("EXPLAIN_IMAGE Error", { error: error.message });
-    throw error;
-  }
-}
 
 /**
  * Placeholder handler for ask-question requests.

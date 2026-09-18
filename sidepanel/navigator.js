@@ -33,13 +33,42 @@ function fetchNavigator() {
       console.error("Navigator Error:", errorMsg);
       if (emptyState) {
         emptyState.style.display = "block";
-        emptyState.innerHTML = `<span style="color:var(--danger-color)">Failed to generate navigator.</span><br/>${errorMsg}`;
+        emptyState.innerHTML = `
+          <div style="font-size: 28px; color: var(--danger-color, #ef4444); margin-bottom: 8px;">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+          </div>
+          <h3 style="font-size: 14px; font-weight: 600; color: var(--color-text); margin-bottom: 4px;">Navigator Unavailable</h3>
+          <p style="font-size: 11px; color: var(--color-text-muted); line-height: 1.4; margin-bottom: 12px; word-break: break-word;">${errorMsg}</p>
+          <button type="button" class="btn btn-sm btn-primary" id="btn-retry-navigator" style="display: inline-flex; align-items: center; gap: 6px; margin: 0 auto; font-size: 11px; padding: 6px 14px;">
+            <i class="fa-solid fa-rotate-right"></i>
+            <span>Retry</span>
+          </button>
+        `;
+        document.getElementById("btn-retry-navigator")?.addEventListener("click", () => fetchNavigator());
       }
       return;
     }
     
-    navigatorData = response.data;
+    const rawData = response.data || response;
+    navigatorData = (rawData && rawData.data && !rawData.sections) ? rawData.data : rawData;
     renderNavigator(navigatorData);
+  });
+}
+
+// Bind navigator actions once DOM is ready
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initNavigatorListeners);
+} else {
+  initNavigatorListeners();
+}
+
+function initNavigatorListeners() {
+  document.getElementById("btn-refresh-navigator")?.addEventListener("click", () => {
+    navigatorData = null;
+    fetchNavigator();
+  });
+  document.getElementById("btn-trigger-fetch-navigator")?.addEventListener("click", () => {
+    fetchNavigator();
   });
 }
 

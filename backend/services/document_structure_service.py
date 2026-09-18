@@ -18,7 +18,10 @@ TARGETED FIXES ENFORCED:
 """
 
 import re
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 import pymupdf4llm
 from typing import List, Dict, Any, Optional, Tuple, Set
 

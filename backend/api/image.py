@@ -21,13 +21,28 @@ async def get_image_endpoint(image_id: str):
     return Response(content=image_data['bytes'], media_type=media_type)
 
 @router.post("/image/explain", response_model=ImageExplanationResponse)
+@router.post("/image/explain/", response_model=ImageExplanationResponse)
+@router.post("/explain-image", response_model=ImageExplanationResponse)
+@router.post("/explain-image/", response_model=ImageExplanationResponse)
 async def explain_image_endpoint(request: ExplainImageRequest):
     """
-    Endpoint to explain a specific image using Claude Vision AI.
+    Endpoint to explain a specific image using Vision AI.
     """
-    image_data = get_image(request.image_id)
+    image_data = None
+    if request.image_id:
+        image_data = get_image(request.image_id)
+        
+    if not image_data and request.image_base64:
+        image_data = {
+            "base64_data": request.image_base64,
+            "format": request.image_format or "jpeg"
+        }
+        
     if not image_data:
-        raise HTTPException(status_code=404, detail="Image not found")
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Image '{request.image_id}' not found in active session or cache. Please re-upload or re-extract images from the PDF."
+        )
         
     try:
         result = analyze_image(

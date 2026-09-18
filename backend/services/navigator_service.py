@@ -1,7 +1,10 @@
 import os
 import json
 import hashlib
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 import pymupdf4llm
 from pydantic import ValidationError
 from models.schemas import NavigatorResponse, NavigatorSection, NavigatorItem

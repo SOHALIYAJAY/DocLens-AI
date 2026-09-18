@@ -21,7 +21,10 @@ Tests:
 
 import os
 import sys
-import fitz
+try:
+    import pymupdf as fitz
+except ImportError:
+    import fitz
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 

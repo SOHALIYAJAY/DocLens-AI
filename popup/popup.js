@@ -814,41 +814,39 @@ function renderPopupExtractedImages(images) {
         explainBtn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> Explain Image';
 
         if (chrome.runtime.lastError || !explainRes || !explainRes.success) {
-          explanationContainer.innerHTML = '<span style="color: #ef4444;">Failed to analyze image.</span>';
+          const errMsg = explainRes?.error || chrome.runtime.lastError?.message || "Failed to analyze image. Please verify Groq API key and backend.";
+          explanationContainer.innerHTML = `<span style="color: #ef4444; font-size:12px;">${errMsg}</span>`;
           return;
         }
 
-        const result = explainRes.data || explainRes;
+        const raw = explainRes.data || explainRes;
+        const result = raw.data || raw;
 
-        let componentsHtml = "";
-        if (result.important_components && result.important_components.length > 0) {
-          componentsHtml = `<div style="margin-top:6px;"><strong>Important Components:</strong><ul style="padding-left:16px; margin:4px 0;">` + result.important_components.map(c => `<li>${c}</li>`).join("") + `</ul></div>`;
-        }
-
-        let relationshipsHtml = "";
-        if (result.relationships && result.relationships.length > 0) {
-          relationshipsHtml = `<div style="margin-top:6px;"><strong>Relationships:</strong><ul style="padding-left:16px; margin:4px 0;">` + result.relationships.map(r => `<li>${r}</li>`).join("") + `</ul></div>`;
-        }
+        const points = (result.key_takeaways && result.key_takeaways.length > 0)
+          ? result.key_takeaways
+          : (result.important_components && result.important_components.length > 0 ? result.important_components : []);
 
         let takeawaysHtml = "";
-        if (result.key_takeaways && result.key_takeaways.length > 0) {
-          takeawaysHtml = `<div style="margin-top:6px;"><strong>Key Takeaways:</strong><ul style="padding-left:16px; margin:4px 0;">` + result.key_takeaways.map(k => `<li>${k}</li>`).join("") + `</ul></div>`;
-        }
-
-        let applicationHtml = "";
-        if (result.real_world_application) {
-          applicationHtml = `<div style="margin-top:6px;"><strong>Real-World Application:</strong><br/>${result.real_world_application}</div>`;
+        if (points.length > 0) {
+          takeawaysHtml = `
+            <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--color-border, rgba(255,255,255,0.1));">
+              <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #38bdf8;">Key Takeaways</span>
+              <ul style="margin: 4px 0 0 16px; padding: 0; font-size: 12px; line-height: 1.45; color: #f1f5f9;">
+                ${points.slice(0, 3).map(k => `<li style="margin-bottom: 3px;">${k}</li>`).join("")}
+              </ul>
+            </div>
+          `;
         }
 
         explanationContainer.innerHTML = `
-          <strong style="color:#06b6d4; font-size:13px;">${result.title}</strong><br/>
-          <em style="color:#94a3b8;">${result.summary}</em><br/>
-          <p style="margin-top:6px;">${result.explanation}</p>
-          <div style="margin-top:6px; border-top: 1px solid var(--color-border); padding-top: 6px;">
-            ${componentsHtml}
-            ${relationshipsHtml}
+          <div style="font-size: 12px; line-height: 1.5; color: #f8fafc;">
+            <div style="font-weight: 600; font-size: 13px; color: #38bdf8; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+              <i class="fa-solid fa-chart-simple"></i>
+              <span>${result.title || "Visual Analysis"}</span>
+            </div>
+            ${result.summary ? `<div style="color: #cbd5e1; font-size: 12px; margin-bottom: 6px; font-style: italic; line-height: 1.45;">${result.summary}</div>` : ""}
+            ${result.explanation ? `<div style="color: #ffffff; font-size: 12.5px; margin-bottom: 6px; line-height: 1.55;">${result.explanation}</div>` : ""}
             ${takeawaysHtml}
-            ${applicationHtml}
           </div>
         `;
       });

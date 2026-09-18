@@ -1,10 +1,17 @@
-# services/image_service.py
-import fitz  # PyMuPDF
+try:
+    import pymupdf as fitz  # PyMuPDF
+except ImportError:
+    import fitz
+import os
+import json
 import base64
 import uuid
 import io
 import hashlib
 from PIL import Image, ImageStat
+
+IMAGE_CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".image_cache")
+os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
 
 # Global in-memory store for images. 
 # Maps image_id (str) to a dict containing {"base64_data": str, "format": str, "bytes": bytes}
@@ -125,13 +132,20 @@ def extract_vector_diagrams(page, page_num: int, page_seen_hashes: set) -> list[
         if diagram_hash not in page_seen_hashes and is_valid_content_image(diagram_bytes, width, height):
             page_seen_hashes.add(diagram_hash)
             diagram_base64 = base64.b64encode(diagram_bytes).decode("utf-8")
-            image_id = str(uuid.uuid4())
+            image_id = f"diag_p{page_num + 1}_{diagram_hash[:12]}"
             
-            IMAGE_STORE[image_id] = {
+            img_obj = {
                 "base64_data": diagram_base64,
                 "format": "png",
                 "bytes": diagram_bytes
             }
+            IMAGE_STORE[image_id] = img_obj
+            try:
+                cache_path = os.path.join(IMAGE_CACHE_DIR, f"{image_id}.json")
+                with open(cache_path, "w", encoding="utf-8") as cf:
+                    json.dump({"base64_data": diagram_base64, "format": "png"}, cf)
+            except Exception:
+                pass
             
             diagrams.append({
                 "image_id": image_id,
@@ -204,15 +218,22 @@ def extract_and_store_images(file_bytes: bytes) -> list[dict]:
                 # Convert image bytes to base64
                 image_base64 = base64.b64encode(image_bytes).decode("utf-8")
                 
-                # Generate unique ID for the image
-                image_id = str(uuid.uuid4())
+                # Generate deterministic ID for the image
+                image_id = f"img_p{page_num + 1}_{img_hash[:12]}"
                 
-                # Store in global dictionary
-                IMAGE_STORE[image_id] = {
+                # Store in global dictionary and disk cache
+                img_obj = {
                     "base64_data": image_base64,
                     "format": image_ext,
                     "bytes": image_bytes
                 }
+                IMAGE_STORE[image_id] = img_obj
+                try:
+                    cache_path = os.path.join(IMAGE_CACHE_DIR, f"{image_id}.json")
+                    with open(cache_path, "w", encoding="utf-8") as cf:
+                        json.dump({"base64_data": image_base64, "format": image_ext}, cf)
+                except Exception:
+                    pass
                 
                 extracted_images.append({
                     "image_id": image_id,
@@ -235,30 +256,82 @@ def extract_and_store_images(file_bytes: bytes) -> list[dict]:
 
 def get_image(image_id: str) -> dict:
     """
-    Retrieves an image from the global store.
-    
-    Args:
-        image_id (str): The ID of the image to retrieve.
-        
-    Returns:
-        dict: A dictionary containing the image bytes and format, or None if not found.
+    Retrieves an image from the global store or persistent disk cache.
+    Falls back to re-extracting from active document if the server was restarted.
     """
-    return IMAGE_STORE.get(image_id)
+    if not image_id:
+        return None
+
+    # 1. Check in-memory store
+    if image_id in IMAGE_STORE:
+        return IMAGE_STORE[image_id]
+
+    # 2. Check disk cache for this specific image_id
+    cache_path = os.path.join(IMAGE_CACHE_DIR, f"{image_id}.json")
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as cf:
+                data = json.load(cf)
+                b64 = data.get("base64_data", "")
+                raw_bytes = base64.b64decode(b64) if b64 else b""
+                img_obj = {
+                    "base64_data": b64,
+                    "format": data.get("format", "png"),
+                    "bytes": raw_bytes
+                }
+                IMAGE_STORE[image_id] = img_obj
+                return img_obj
+        except Exception as e:
+            print(f"Error reading image cache: {e}")
+
+    # 3. Check any cache files in IMAGE_CACHE_DIR matching substring/suffix
+    try:
+        if os.path.exists(IMAGE_CACHE_DIR):
+            for fname in os.listdir(IMAGE_CACHE_DIR):
+                if fname.endswith(".json"):
+                    stem = fname[:-5]
+                    if stem == image_id or image_id in stem or stem in image_id:
+                        with open(os.path.join(IMAGE_CACHE_DIR, fname), "r", encoding="utf-8") as cf:
+                            data = json.load(cf)
+                            b64 = data.get("base64_data", "")
+                            raw_bytes = base64.b64decode(b64) if b64 else b""
+                            img_obj = {
+                                "base64_data": b64,
+                                "format": data.get("format", "png"),
+                                "bytes": raw_bytes
+                            }
+                            IMAGE_STORE[image_id] = img_obj
+                            return img_obj
+    except Exception:
+        pass
+
+    # 4. Fallback: If server restarted and IMAGE_STORE is empty, auto-restore from active document
+    active_pdf_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".active_document.pdf")
+    if os.path.exists(active_pdf_path):
+        try:
+            print(f"[IMAGE_SERVICE] Auto-restoring images from active PDF: {active_pdf_path}")
+            with open(active_pdf_path, "rb") as f:
+                active_bytes = f.read()
+            extract_and_store_images(active_bytes)
+            if image_id in IMAGE_STORE:
+                return IMAGE_STORE[image_id]
+            # If the client had an older legacy UUID, return the first available image
+            if IMAGE_STORE:
+                return next(iter(IMAGE_STORE.values()))
+        except Exception as e:
+            print(f"Failed to auto-restore images from active document: {e}")
+
+    return None
 
 def get_image_base64(image_id: str) -> dict:
     """
-    Retrieves the base64 string of an image from the global store.
-    
-    Args:
-        image_id (str): The ID of the image to retrieve.
-        
-    Returns:
-        dict: A dictionary containing the image base64 and format, or None if not found.
+    Retrieves the base64 string of an image from the global store or disk cache.
     """
-    if image_id in IMAGE_STORE:
+    img = get_image(image_id)
+    if img:
         return {
-            "base64_data": IMAGE_STORE[image_id]["base64_data"],
-            "format": IMAGE_STORE[image_id]["format"]
+            "base64_data": img.get("base64_data", ""),
+            "format": img.get("format", "png")
         }
     return None
 

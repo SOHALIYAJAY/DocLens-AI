@@ -5,8 +5,11 @@ import tempfile
 import time
 import base64
 from dotenv import load_dotenv
-import fitz  # PyMuPDF text preserved properly structurewise
-from services.llm_service import get_groq_client
+try:
+    import pymupdf as fitz  # PyMuPDF
+except ImportError:
+    import fitz
+from services.llm_service import get_groq_client, get_groq_vision_client
 
 load_dotenv()
 
@@ -83,7 +86,10 @@ def extract_text_from_pdf(file_bytes: bytes) -> list:
         if total_text_length < (num_pages * 50) or total_text_length < 100:
             print("Scanned PDF detected (low text volume). Falling back to Groq Vision OCR...")
             
-            client = get_groq_client()
+            try:
+                client = get_groq_vision_client()
+            except Exception:
+                client = get_groq_client()
             vision_model = os.getenv("GROQ_VISION_MODEL", "qwen/qwen3.8-27b")
             
             doc = fitz.open(stream=file_bytes, filetype="pdf")

@@ -4,12 +4,13 @@
 import base64
 import json
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.responses import Response
 import os
 import traceback
-from models.schemas import ChatRequest, ChatResponse, UploadResponse, SummaryRequest, SummaryResponse, LocalUploadRequest, ExplainImageRequest
+from models.schemas import ChatRequest, ChatResponse, UploadResponse, SummaryRequest, SummaryResponse, LocalUploadRequest, ExplainImageRequest, ImageExplanationResponse
 from services.llm_service import generate_response, generate_summary
 from services.pdf_service import extract_text_from_pdf, generate_document_id
-from services.image_service import extract_and_store_images, get_image_base64
+from services.image_service import extract_and_store_images, get_image_base64, get_image
 from services.vision_service import analyze_image
 from services.chunk_service import chunk_text, chunk_pages_with_metadata
 from services.embedding_service import generate_embeddings
@@ -502,6 +503,49 @@ async def create_local_navigator(request: LocalUploadRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/generate-current-navigator", response_model=NavigatorResponse)
+@router.get("/generate-current-navigator", response_model=NavigatorResponse)
+async def create_current_navigator():
+    """
+    Endpoint to generate or retrieve the cached AI Document Navigator for the currently active document in memory.
+    """
+    if not os.path.exists(ACTIVE_PDF_PATH):
+        raise HTTPException(status_code=404, detail="No active document found in memory. Please open or upload a PDF first.")
+        
+    try:
+        with open(ACTIVE_PDF_PATH, 'rb') as f:
+            file_bytes = f.read()
+            
+        filename = "Active_Document.pdf"
+        if os.path.exists(ACTIVE_META_PATH):
+            try:
+                with open(ACTIVE_META_PATH, 'r', encoding='utf-8') as f:
+                    meta = json.load(f)
+                    filename = meta.get("filename", filename)
+            except Exception:
+                pass
+                
+        navigator_res = generate_navigator(file_bytes, filename)
+        
+        # Extract links dynamically from the bytes
+        try:
+            from services.pdf_generator_service import extract_links_from_pdf_bytes
+            links = extract_links_from_pdf_bytes(file_bytes)
+            if links:
+                from models.schemas import NavigatorSection, NavigatorItem
+                has_links = any(s.title == "Document Links" for s in navigator_res.sections)
+                if not has_links:
+                    navigator_res.sections.append(NavigatorSection(
+                        title="Document Links",
+                        items=[NavigatorItem(**l) for l in links]
+                    ))
+        except Exception as e:
+            print(f"Error appending links dynamically: {e}")
+            
+        return navigator_res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/download-navigator-pdf")
 async def download_navigator_pdf(file: UploadFile = File(...)):
     """
@@ -726,5 +770,65 @@ async def generate_research_report_endpoint(request: Optional[ResearchReportRequ
         err_msg = traceback.format_exc()
         print(err_msg)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# Image & Multimodal Vision Endpoints
+# ==========================================
+@router.get("/image/{image_id}")
+async def get_image_route(image_id: str):
+    """
+    Endpoint to retrieve an extracted image by its ID.
+    """
+    image_data = get_image(image_id)
+    if not image_data:
+        raise HTTPException(status_code=404, detail="Image not found")
+        
+    media_type = f"image/{image_data['format'].lower()}"
+    return Response(content=image_data['bytes'], media_type=media_type)
+
+@router.post("/image/explain", response_model=ImageExplanationResponse)
+@router.post("/image/explain/", response_model=ImageExplanationResponse)
+@router.post("/explain-image", response_model=ImageExplanationResponse)
+@router.post("/explain-image/", response_model=ImageExplanationResponse)
+async def explain_image_route(request: ExplainImageRequest):
+    """
+    Endpoint to explain an extracted image or diagram using Multimodal Vision AI.
+    """
+    image_data = None
+    if request.image_id:
+        image_data = get_image(request.image_id)
+        
+    if not image_data and request.image_base64:
+        image_data = {
+            "base64_data": request.image_base64,
+            "format": request.image_format or "jpeg"
+        }
+        
+    if not image_data:
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Image '{request.image_id}' not found in active session or cache. Please re-upload or re-extract images from the PDF."
+        )
+        
+    try:
+        result = analyze_image(
+            image_base64=image_data["base64_data"], 
+            image_format=image_data["format"], 
+            prompt=request.prompt
+        )
+        return ImageExplanationResponse(
+            success=True,
+            title=result.get("title", "Image Analysis"),
+            summary=result.get("summary", ""),
+            explanation=result.get("explanation", ""),
+            important_components=result.get("important_components", []),
+            relationships=result.get("relationships", []),
+            key_takeaways=result.get("key_takeaways", []),
+            real_world_application=result.get("real_world_application", "")
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 

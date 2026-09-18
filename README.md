@@ -1,167 +1,95 @@
- # AI PDF Assistant 📄🤖
+# 📄 DocLens-AI — Intelligent Document Assistant
 
-AI PDF Assistant is a powerful Chrome Extension paired with a FastAPI Python backend designed to read, summarize, analyze, and extract structure from PDF documents. It leverages advanced layout parsers (`pymupdf4llm`) and multimodal AI to assist users in navigating, bookmarking, and downloading structured document summaries.
+> **Transform any PDF into an interactive knowledge base with grounded AI Chat, multimodal vision analysis, and real-time document navigation.**
 
----
-
-## 🌟 Key Features
-
-### 1. 📚 AI Document Navigator (Sidepanel Accordions)
-When a PDF is loaded, the assistant automatically parses the document layout and generates a structured navigation sidebar with the following collapsible panels:
-- **📑 Chapters & Headings**: Structured document outline.
-- **⭐ Definitions**: Key terms extracted and defined.
-- **🧮 Formulas**: Important equations highlighted.
-- **📊 Figures & Tables**: Captions and locations of visuals.
-- **🖼 Images**: Multimodal analysis card for every image.
-- **💻 Code Blocks**: Highlights Courier-formatted coding snippets.
-- **🔗 Document Links**: Automatically extracts **both interactive hyperlinks and plain-text URLs** using regex with clean normalization.
-- **Frequently Mentioned Topics & References**.
-
-### 2. 🖨 Premium PDF Generation & Download
-Users can download a beautifully structured PDF summary sheet by clicking the download icon in the popup. Features include:
-- **Document Overview Grid**: Page count, word count, difficulty level, and estimated reading time.
-- **Visual Style Formatting**: Slate Blue accents, monospaced code blocks, and yellow highlight containers for equations.
-- **Interactive Hyperlinks**: Clickable blue links embedded in the PDF that launch the external URL.
-
-### 3. 🖼 Multimodal Image Analysis ("Explain Image")
-Extracts images directly from the PDF and provides a quick AI explanation highlighting:
-- Important Components.
-- Structural Relationships.
-- Key Takeaways.
-- Real-World Applications.
+DocLens-AI is a high-performance Chrome Extension paired with a FastAPI backend that provides accurate, citation-backed document exploration directly in your browser.
 
 ---
 
-## 🛠 Tech Stack
+## ✨ Key Features
 
-- **Extension Frontend**: HTML5, Vanilla CSS3 (Modern dark-mode glassmorphic theme), JavaScript (Chrome Extension API - Manifest V3).
-- **Backend Service**: Python 3.13, FastAPI, Uvicorn.
-- **PDF Extraction**: PyMuPDF (`fitz`), `pymupdf4llm` (Layout-aware Markdown parser).
-- **PDF Generation**: ReportLab PDF library.
+- **💬 Grounded AI Chat**: Multi-turn conversation powered by Groq LLM with hybrid retrieval (ChromaDB vector + BM25 Okapi) and strict grounding verification to eliminate hallucinations.
+- **🧭 Document Navigator**: Auto-extracts chapters, definitions, key formulas, tables, figures, code blocks, and embedded links with page jump shortcuts.
+- **👁️ Multimodal Vision**: Click any chart, architecture diagram, or figure to receive instant, deep explanations using Vision AI.
+- **📊 Table & Metric Intelligence**: Table-aware retrieval that deterministically calculates sums, averages, YoY growth, and maximums/minimums without math errors.
+- **📑 PDF Summary Export**: Generate beautifully formatted ReportLab executive summary PDF reports directly from the extension.
+- **🔖 Smart Bookmarking**: Save important pages, highlight notes, and jump directly to references across tabs.
 
 ---
 
-## 🚀 Installation & Setup
+## 🛠️ Architecture & Tech Stack
+
+```
+[ Browser / Chrome Extension (MV3) ]
+       │  (Popup & Sidepanel UI, Content Scripts, Background Worker)
+       ▼
+[ FastAPI Backend API ]
+  ├── Query Understanding & Rewriter (Multi-turn conversational context)
+  ├── Hybrid Retrieval (Vector Search + BM25 Okapi + RRF Fusion)
+  ├── Cross-Encoder Reranker & Parent Context Expansion
+  ├── Specialized Pipelines (Table Analytics, Vision AI, Topic Hierarchy)
+  └── Hallucination & Grounding Verification Layer (Audit before response)
+```
+
+- **Frontend**: Chrome Extension (Manifest V3), HTML5, Vanilla CSS, JavaScript.
+- **Backend**: Python 3.10+, FastAPI, Uvicorn, PyMuPDF (fitz).
+- **Retrieval & RAG**: ChromaDB, BM25Okapi, Cross-Encoder reranking (`ms-marco-MiniLM-L-6-v2`).
+- **AI Models**: Groq Cloud LLM (`groq/compound-mini`), Vision AI (`qwen/qwen3.8-27b`, Gemini Vision).
+- **PDF Generation**: ReportLab for executive document reports.
+
+---
+
+## 🚀 Getting Started
 
 ### 1. Backend Setup
-1. Navigate to the `backend` directory:
-   ```bash
-   cd backend
-   ```
-2. Install the required Python packages:
-   ```bash
-   pip install -r requirements.txt
-   # (Ensure pymupdf, pymupdf4llm, reportlab, fastapi, and uvicorn are installed)
-   ```
-3. Set your AI API key in the environment variables (e.g. `.env` or system variables).
-4. Run the Uvicorn server:
-   ```bash
-   uvicorn main:app --reload
-   ```
-   The backend will be running on `http://127.0.0.1:8000`.
+
+```bash
+# Navigate to the backend directory
+cd backend
+
+# Install dependencies
+pip install -r ../requirements.txt
+
+# Configure your environment variables
+cp .env.example .env
+# Edit .env and insert your GROQ_API_KEY and GEMINI_API_KEY
+
+# Start the FastAPI server
+python main.py
+# Server runs at: http://127.0.0.1:8000
+```
 
 ### 2. Chrome Extension Setup
-1. Open Google Chrome and go to `chrome://extensions`.
+
+1. Open Chrome and navigate to `chrome://extensions/`.
 2. Enable **Developer mode** (toggle in the top-right corner).
-3. Click **Load unpacked** (top-left corner).
-4. Select the project root folder (`AI-PDF-Assistant` directory).
-5. The extension is now active! Pin it to your Chrome toolbar.
+3. Click **Load unpacked** and select the `DocLens-AI` root repository folder.
+4. Click the **DocLens-AI** extension icon in your Chrome toolbar or open the **Side Panel** to begin.
 
 ---
 
-## 📖 How to Use
+## ⚙️ Environment Variables
 
-1. **Open a PDF** inside a Google Chrome tab (either a web PDF URL or a local `file:///` PDF).
-2. **Click the AI PDF Assistant Extension Icon** to open the Popup.
-3. Click **Extract Text & Images** to analyze the PDF.
-4. Open the **📚 AI Navigator** in the sidebar to review the structured breakdown.
-5. Click the **Download Icon** (top-right of the popup) to generate and download your custom **AI Navigator PDF**!
+Configure these in `backend/.env`:
 
----
-
-## 🤝 License
-This project is licensed under the MIT License.
-=======
-# AI PDF Assistant 📄🤖
-
-AI PDF Assistant is a powerful Chrome Extension paired with a FastAPI Python backend designed to read, summarize, analyze, and extract structure from PDF documents. It leverages advanced layout parsers (`pymupdf4llm`) and multimodal AI to assist users in navigating, bookmarking, and downloading structured document summaries.
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `GROQ_API_KEY` | Groq API key for fast inference & hybrid RAG | *Required* |
+| `GROQ_MODEL` | Primary LLM model name | `groq/compound-mini` |
+| `GROQ_VISION_API_KEY` | Groq Vision API key | *Optional (falls back to GROQ_API_KEY)* |
+| `GROQ_VISION_MODEL` | Multimodal model for diagram analysis | `qwen/qwen3.8-27b` |
+| `GEMINI_API_KEY` | Google Gemini API key for fallback vision | *Optional* |
 
 ---
 
-## 🌟 Key Features
+## 🔒 Security & Privacy
 
-### 1. 📚 AI Document Navigator (Sidepanel Accordions)
-When a PDF is loaded, the assistant automatically parses the document layout and generates a structured navigation sidebar with the following collapsible panels:
-- **📑 Chapters & Headings**: Structured document outline.
-- **⭐ Definitions**: Key terms extracted and defined.
-- **🧮 Formulas**: Important equations highlighted.
-- **📊 Figures & Tables**: Captions and locations of visuals.
-- **🖼 Images**: Multimodal analysis card for every image.
-- **💻 Code Blocks**: Highlights Courier-formatted coding snippets.
-- **🔗 Document Links**: Automatically extracts **both interactive hyperlinks and plain-text URLs** using regex with clean normalization.
-- **Frequently Mentioned Topics & References**.
-
-### 2. 🖨 Premium PDF Generation & Download
-Users can download a beautifully structured PDF summary sheet by clicking the download icon in the popup. Features include:
-- **Document Overview Grid**: Page count, word count, difficulty level, and estimated reading time.
-- **Visual Style Formatting**: Slate Blue accents, monospaced code blocks, and yellow highlight containers for equations.
-- **Interactive Hyperlinks**: Clickable blue links embedded in the PDF that launch the external URL.
-
-### 3. 🖼 Multimodal Image Analysis ("Explain Image")
-Extracts images directly from the PDF and provides a quick AI explanation highlighting:
-- Important Components.
-- Structural Relationships.
-- Key Takeaways.
-- Real-World Applications.
+- Documents are processed locally on your backend server.
+- API keys, embeddings, and active document buffers remain strictly in your local environment.
+- Grounding verification ensures answers strictly cite provided PDF text without fabricating information.
 
 ---
 
-## 🛠 Tech Stack
+## 📄 License
 
-- **Extension Frontend**: HTML5, Vanilla CSS3 (Modern dark-mode glassmorphic theme), JavaScript (Chrome Extension API - Manifest V3).
-- **Backend Service**: Python 3.13, FastAPI, Uvicorn.
-- **PDF Extraction**: PyMuPDF (`fitz`), `pymupdf4llm` (Layout-aware Markdown parser).
-- **PDF Generation**: ReportLab PDF library.
-
----
-
-## 🚀 Installation & Setup
-
-### 1. Backend Setup
-1. Navigate to the `backend` directory:
-   ```bash
-   cd backend
-   ```
-2. Install the required Python packages:
-   ```bash
-   pip install -r requirements.txt
-   # (Ensure pymupdf, pymupdf4llm, reportlab, fastapi, and uvicorn are installed)
-   ```
-3. Set your AI API key in the environment variables (e.g. `.env` or system variables).
-4. Run the Uvicorn server:
-   ```bash
-   uvicorn main:app --reload
-   ```
-   The backend will be running on `http://127.0.0.1:8000`.
-
-### 2. Chrome Extension Setup
-1. Open Google Chrome and go to `chrome://extensions`.
-2. Enable **Developer mode** (toggle in the top-right corner).
-3. Click **Load unpacked** (top-left corner).
-4. Select the project root folder (`AI-PDF-Assistant` directory).
-5. The extension is now active! Pin it to your Chrome toolbar.
-
----
-
-## 📖 How to Use
-
-1. **Open a PDF** inside a Google Chrome tab (either a web PDF URL or a local `file:///` PDF).
-2. **Click the AI PDF Assistant Extension Icon** to open the Popup.
-3. Click **Extract Text & Images** to analyze the PDF.
-4. Open the **📚 AI Navigator** in the sidebar to review the structured breakdown.
-5. Click the **Download Icon** (top-right of the popup) to generate and download your custom **AI Navigator PDF**!
-
----
-
-## 🤝 License
 This project is licensed under the MIT License.

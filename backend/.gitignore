@@ -1,0 +1,32 @@
+# ==============================================================================
+# DocLens-AI Backend .gitignore
+# ==============================================================================
+
+# Secrets
+.env
+.env.*
+*.env
+!.env.example
+
+# Python Cache & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+*.log
+
+# DocLens-AI Runtime Caches & Local Databases
+.chroma_db/
+chroma_db/
+.image_cache/
+.navigator_cache/
+.bm25_index.json
+.context_chunks.json
+.active_document.pdf
+.active_meta.json
+
+# Generated output files
+*.pdf
+AI_Executive_Summary*.pdf
+AI_Research_Report*.pdf

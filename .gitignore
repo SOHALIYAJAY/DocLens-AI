@@ -1,65 +1,125 @@
-# Node
+# ==============================================================================
+# DocLens-AI — Comprehensive Git Ignore Configuration
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Environment Variables & Secrets (CRITICAL: Never commit API keys)
+# ------------------------------------------------------------------------------
+.env
+.env.*
+*.env
+**/.env
+**/.env.*
+**/*.env
+# Explicitly keep example environment templates tracked
+!**/.env.example
+!.env.example
+
+# ------------------------------------------------------------------------------
+# 2. Python & Bytecode Cache
+# ------------------------------------------------------------------------------
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+**/.venv/
+**/venv/
+**/env/
+
+# Python Testing & Linters
+.pytest_cache/
+**/.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+*.log
+**/*.log
+
+# ------------------------------------------------------------------------------
+# 3. DocLens-AI Application Runtime Caches & Local Databases
+# ------------------------------------------------------------------------------
+# ChromaDB Vector Store
+.chroma_db/
+**/.chroma_db/
+chroma_db/
+**/chroma_db/
+chroma/
+*.chroma
+chroma.sqlite3
+
+# Image & Diagram Cache
+.image_cache/
+**/.image_cache/
+
+# AI Navigator Structure Cache
+.navigator_cache/
+**/.navigator_cache/
+
+# BM25 & Context Expansion Chunk Caches
+.bm25_index.json
+**/.bm25_index.json
+.context_chunks.json
+**/.context_chunks.json
+
+# Active Document Memory Session Files
+.active_document.pdf
+**/.active_document.pdf
+.active_meta.json
+**/.active_meta.json
+
+# ------------------------------------------------------------------------------
+# 4. User Documents & Generated PDF Exports
+# ------------------------------------------------------------------------------
+# Ignore uploaded / test PDFs in root & backend, but keep static assets
+*.pdf
+!assets/*.pdf
+!assets/**/*.pdf
+AI_Executive_Summary*.pdf
+AI_Research_Report*.pdf
+
+# ------------------------------------------------------------------------------
+# 5. Node / NPM Dependencies & Logs
+# ------------------------------------------------------------------------------
 node_modules/
-package-lock.json
-yarn.lock
-pnpm-lock.yaml
+**/node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 
-# Environment
-.env
-.env.local
-.env.*.local
-
-# Python / Backend
-__pycache__/
-*.py[cod]
-*$py.class
-.python-version
-venv/
-.venv/
-env/
-.pytest_cache/
-.coverage
-htmlcov/
-*.log
-
-# ChromaDB / Database / Caches
-.chroma_db/
-chroma_db/
-chroma/
-*.chroma
-chroma.sqlite3
-.navigator_cache/
-.bm25_index.json
-.context_chunks.json
-.active_document.pdf
-.active_meta.json
-
-# OS
+# ------------------------------------------------------------------------------
+# 6. Operating System Files
+# ------------------------------------------------------------------------------
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
 ehthumbs.db
 Desktop.ini
 
-# IDEs / Editors
+# ------------------------------------------------------------------------------
+# 7. IDE & Editor Artifacts
+# ------------------------------------------------------------------------------
 .vscode/
+**/.vscode/
 .idea/
-*.iml
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+**/.idea/
+*.swp
+*.swo
 *~
-
-# Build output / Temp
-dist/
-build/
-*.tmp
-*.temp
-
-# Coverage
-coverage/

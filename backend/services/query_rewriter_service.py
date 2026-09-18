@@ -4,6 +4,7 @@ Query Rewriter Service for Conversational PDF Assistant.
 Converts conversational follow-ups and pronoun-based questions into standalone retrieval queries.
 """
 
+import re
 from typing import List, Dict, Optional
 from services.llm_service import safe_print, get_groq_client, get_groq_model, execute_groq_completion_with_retry
 
@@ -41,8 +42,17 @@ def rewrite_query(question: str, history: Optional[List[Dict[str, str]]] = None)
     if not question or not question.strip():
         log_query_rewriting(question or "", question or "")
         return question or ""
-
     clean_question = question.strip()
+
+    # Quick check for greetings / conversational pleasantries / direct commands
+    q_norm = clean_question.lower().strip("?!., ")
+    if q_norm in [
+        "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+        "who are you", "what can you do", "help", "thanks", "thank you",
+        "bye", "goodbye"
+    ]:
+        log_query_rewriting(clean_question, clean_question)
+        return clean_question
 
     # If no history is provided or history is empty, query is already standalone
     if not history:

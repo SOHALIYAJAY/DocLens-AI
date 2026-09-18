@@ -142,11 +142,12 @@ class FigureService:
         q_lower = query.lower()
 
         visual_keywords = [
-            "figure", "fig", "diagram", "chart", "graph", "plot", "image", "illustration",
-            "architecture", "flowchart", "draw", "picture", "trend", "visual", "show"
+            "figure", "fig.", "fig ", "diagram", "chart", "graph", "plot", "image", "illustration",
+            "architecture diagram", "flowchart", "picture", "infographic"
         ]
 
-        is_visual = any(kw in q_lower for kw in visual_keywords)
+        # Ensure word-boundary or explicit match for short keywords like "fig"
+        is_visual = any(kw in q_lower for kw in visual_keywords) or bool(re.search(r"\bfig\b", q_lower))
 
         # Detect figure number reference (e.g. "Figure 4" or "Fig 2")
         fig_num_match = re.search(r"(?:figure|fig|diagram|chart|graph)\s*(\d+)", q_lower)
@@ -207,7 +208,8 @@ class FigureService:
         if best_score > 0:
             return best_fig
 
-        return self.figures[0] if self.figures else None
+        # Do NOT arbitrarily return self.figures[0] when no figure matched the query!
+        return None
 
     def analyze_visual_evidence(self, figure: Dict[str, Any], query: str) -> Optional[Dict[str, Any]]:
         """

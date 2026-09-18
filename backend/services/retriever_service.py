@@ -50,6 +50,12 @@ def retrieve_relevant_chunks(query: str, top_k: int = None, max_distance: float 
         if content_type and content_type != "text":
             header_parts.append(f"[{content_type.upper()}]")
 
+        header_str = " ".join(header_parts)
+        formatted_chunks.append(f"{header_str}\n{text}")
+
+    unique_chunks = list(dict.fromkeys(formatted_chunks))
+    return unique_chunks
+
 def retrieve_relevant_chunks_with_metadata(query: str, top_k: int = None, max_distance: float = 1.5) -> tuple[List[str], List[dict]]:
     """
     Retrieves relevant text chunks and raw metadata dictionaries.

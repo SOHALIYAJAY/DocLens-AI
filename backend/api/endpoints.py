@@ -283,9 +283,9 @@ async def chat_pdf(request: ChatRequest):
             context_chunks.append(topic_block)
             raw_metadata_list.extend(topic_meta)
 
-            # If user asked for specific topic details (e.g. 'topic 2'), also augment with hybrid chunks
-            if topic_intent.get("query_type") == "detail":
-                hybrid_text, text_meta = retrieve_relevant_chunks_with_metadata(retrieval_query, top_k=2)
+            # Augment topic structure with hybrid text chunks (unless it was a pure count query)
+            if topic_intent.get("query_type") != "count":
+                hybrid_text, text_meta = retrieve_relevant_chunks_with_metadata(retrieval_query, top_k=5)
                 context_chunks.extend(hybrid_text)
                 raw_metadata_list.extend(text_meta)
 
@@ -304,7 +304,7 @@ async def chat_pdf(request: ChatRequest):
                     "page_number": matching_table["page_number"]
                 })
 
-                hybrid_text, text_meta = retrieve_relevant_chunks_with_metadata(retrieval_query, top_k=2)
+                hybrid_text, text_meta = retrieve_relevant_chunks_with_metadata(retrieval_query, top_k=5)
                 context_chunks.extend(hybrid_text)
                 raw_metadata_list.extend(text_meta)
 
@@ -326,7 +326,7 @@ async def chat_pdf(request: ChatRequest):
                     "page_number": matching_fig["page_number"]
                 })
 
-                hybrid_text, text_meta = retrieve_relevant_chunks_with_metadata(retrieval_query, top_k=2)
+                hybrid_text, text_meta = retrieve_relevant_chunks_with_metadata(retrieval_query, top_k=5)
                 context_chunks.extend(hybrid_text)
                 raw_metadata_list.extend(text_meta)
 
@@ -336,6 +336,31 @@ async def chat_pdf(request: ChatRequest):
             raw_metadata_list.extend(text_meta)
         
         if not context_chunks:
+            # Check if there is conversation history or a conversational pleasantry/question
+            has_history = bool(request.history and any(m.get("content") for m in request.history if isinstance(m, dict)))
+            q_clean = request.question.strip().lower().strip("?!., ")
+            is_conversational = q_clean in [
+                "hi", "hello", "hey", "good morning", "good afternoon", "good evening",
+                "who are you", "what can you do", "help", "thanks", "thank you",
+                "bye", "goodbye"
+            ] or any(phrase in q_clean for phrase in [
+                "what did i ask", "what was my", "summarize our", "repeat that",
+                "can you explain that", "what do you mean"
+            ])
+
+            if has_history or is_conversational:
+                # Answer from conversation mode
+                answer = generate_response(
+                    context_chunks=["[Conversation Mode: Using dialogue context & document knowledge]"],
+                    question=request.question,
+                    history=request.history
+                )
+                return ChatResponse(
+                    success=True,
+                    answer=answer,
+                    sources=[]
+                )
+
             if not get_all_chunks() and not context_expansion_service.doc_chunks:
                 return ChatResponse(
                     success=True,
@@ -357,7 +382,7 @@ async def chat_pdf(request: ChatRequest):
         
         # 7. Extract deterministic sources from chunk metadata & attach to response
         structured_sources = extract_sources_from_metadata(raw_metadata_list or context_chunks)
-        final_answer = attach_sources_to_answer(answer, structured_sources)
+        final_answer = attach_sources_to_answer(answer, structured_sources, append_markdown=True)
 
         return ChatResponse(
             success=True,

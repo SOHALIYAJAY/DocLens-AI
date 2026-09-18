@@ -139,16 +139,18 @@ class TableService:
 
         q_lower = query.lower()
 
-        # Keywords triggering table query
-        table_keywords = [
-            "table", "revenue", "profit", "sales", "expenses", "growth", "margin",
-            "year", "highest", "lowest", "maximum", "minimum", "max", "min",
-            "sum", "total", "average", "mean", "percentage", "percent", "%",
-            "yoy", "year-over-year", "year over year", "compared to", "compare",
-            "which year", "increase", "decrease"
+        # Precise classification: explicit table references or metric + calculation combinations
+        has_explicit_table = bool(re.search(r"\btables?\b|\btabular\b|\bspreadsheet\b|\brows?\b|\bcolumns?\b", q_lower))
+        financial_terms = ["revenue", "profit", "sales", "expenses", "ebitda", "net income", "margin", "cost", "budget"]
+        has_financial = any(term in q_lower for term in financial_terms)
+        calc_indicators = [
+            "highest", "lowest", "maximum", "minimum", "max", "min", "sum",
+            "total", "average", "mean", "yoy", "year-over-year", "calculate",
+            "calculation", "percentage", "percent", "%"
         ]
+        has_calc = any(ind in q_lower for ind in calc_indicators)
 
-        is_table = any(kw in q_lower for kw in table_keywords) or bool(re.search(r"\b(20\d{2}|19\d{2})\b", q_lower))
+        is_table = has_explicit_table or (has_financial and has_calc)
 
         calc_type = "none"
         if any(w in q_lower for w in ["highest", "maximum", "max", "top", "largest", "most", "peak"]):
@@ -163,7 +165,7 @@ class TableService:
             calc_type = "yoy"
         elif any(w in q_lower for w in ["percentage", "percent", "%", "diff", "difference"]):
             calc_type = "percentage"
-        elif "compare" in q_lower or "comparison" in q_lower:
+        elif ("compare" in q_lower or "comparison" in q_lower) and (has_explicit_table or has_financial):
             calc_type = "percentage"
 
         return {
@@ -177,6 +179,14 @@ class TableService:
         """
         if not self.tables:
             return None
+
+        # 1. Match by explicit table number (e.g. "table 2" -> table_2)
+        tbl_num_match = re.search(r"\btable\s*(\d+)\b", query.lower())
+        if tbl_num_match:
+            t_num = int(tbl_num_match.group(1))
+            for tbl in self.tables:
+                if f"table_{t_num}" in tbl["table_id"].lower() or tbl["page_number"] == t_num:
+                    return tbl
 
         q_tokens = set(re.findall(r"\w+", query.lower()))
         
@@ -203,8 +213,8 @@ class TableService:
         if best_score > 0:
             return best_table
 
-        # Return first table if tables exist and query is table-related
-        return self.tables[0] if self.tables else None
+        # Do NOT arbitrarily return self.tables[0] when no query terms matched any table!
+        return None
 
     @staticmethod
     def parse_numeric_value(val_str: str) -> Optional[float]:
